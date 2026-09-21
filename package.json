@@ -1,7 +1,7 @@
 {
   "name": "termbridge",
-  "version": "1.2.1",
-  "description": "Professional Windows AI coding workspace with interactive PTY terminal, automatic engine boot, reliable settings controls, runtime capability discovery, and validated UI interactions.",
+  "version": "1.3.0",
+  "description": "Professional Windows AI coding workspace with validated settings and controls, real interactive PTY terminal, automatic engine boot, runtime capability discovery, and reliable chat transport.",
   "main": "main.js",
   "author": "MdImranTm",
   "license": "MIT",
