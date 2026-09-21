@@ -40,7 +40,7 @@ jobs:
 
       - name: Package direct-open app folder
         shell: pwsh
-        run: Compress-Archive -Path release/win-unpacked/* -DestinationPath release/TermBridge-0.3.1-App-Folder.zip -Force
+        run: Compress-Archive -Path release/win-unpacked/* -DestinationPath release/TermBridge-0.3.2-App-Folder.zip -Force
 
       - name: Package full project source
         shell: pwsh
@@ -60,23 +60,23 @@ jobs:
       - name: Upload portable app
         uses: actions/upload-artifact@v4
         with:
-          name: TermBridge-v0.3.1-Portable
-          path: release/TermBridge-0.3.1-Portable.exe
+          name: TermBridge-v0.3.2-Portable
+          path: release/TermBridge-0.3.2-Portable.exe
           if-no-files-found: error
           retention-days: 30
 
       - name: Upload direct-open app folder
         uses: actions/upload-artifact@v4
         with:
-          name: TermBridge-v0.3.1-App-Folder
-          path: release/TermBridge-0.3.1-App-Folder.zip
+          name: TermBridge-v0.3.2-App-Folder
+          path: release/TermBridge-0.3.2-App-Folder.zip
           if-no-files-found: error
           retention-days: 30
 
       - name: Upload project source
         uses: actions/upload-artifact@v4
         with:
-          name: TermBridge-v0.3.1-Project-Source
+          name: TermBridge-v0.3.2-Project-Source
           path: release/TermBridge-Project-Source.zip
           if-no-files-found: error
           retention-days: 30
@@ -84,7 +84,7 @@ jobs:
       - name: Upload setup installer
         uses: actions/upload-artifact@v4
         with:
-          name: TermBridge-v0.3.1-Setup
-          path: release/TermBridge-0.3.1-Setup.exe
+          name: TermBridge-v0.3.2-Setup
+          path: release/TermBridge-0.3.2-Setup.exe
           if-no-files-found: error
           retention-days: 30
