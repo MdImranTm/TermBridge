@@ -10,9 +10,26 @@ contextBridge.exposeInMainWorld('termbridge', {
   refreshProject: () => ipcRenderer.invoke('project:refresh'),
   startAgent: (agent, options = {}) => ipcRenderer.invoke('agent:start', { agent, options }),
   send: (text) => ipcRenderer.invoke('terminal:write', text),
+  sendChat: (agent, prompt, options = {}) => ipcRenderer.invoke('chat:send', { agent, prompt, options }),
+  stopChat: () => ipcRenderer.invoke('chat:stop'),
   resize: (cols, rows) => ipcRenderer.invoke('terminal:resize', { cols, rows }),
   restart: () => ipcRenderer.invoke('terminal:restart'),
   openExternal: (url) => ipcRenderer.invoke('external:open', url),
+  onChatStream: (callback) => {
+    const handler = (_event, payload) => callback(payload);
+    ipcRenderer.on('chat:stream', handler);
+    return () => ipcRenderer.removeListener('chat:stream', handler);
+  },
+  onChatComplete: (callback) => {
+    const handler = (_event, payload) => callback(payload);
+    ipcRenderer.on('chat:complete', handler);
+    return () => ipcRenderer.removeListener('chat:complete', handler);
+  },
+  onChatStatus: (callback) => {
+    const handler = (_event, payload) => callback(payload);
+    ipcRenderer.on('chat:status', handler);
+    return () => ipcRenderer.removeListener('chat:status', handler);
+  },
   onData: (callback) => {
     const handler = (_event, payload) => callback(payload);
     ipcRenderer.on('terminal:data', handler);
