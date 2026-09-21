@@ -1041,9 +1041,18 @@ function renderCapabilities() {
     }
   );
 
-  addSection('COMMANDS', currentCapabilities.commands || [], (item) => {
+  addSection('COMMANDS', currentCapabilities.commands || [], async (item) => {
+    const command = String(item.name || item).trim();
     switchRightView('terminal');
-    els.terminalInput.value = String(item.name || item);
+
+    if (state.agent === 'opencode' && command.startsWith('/')) {
+      const ok = await api.send(command + '\r');
+      addActivity(ok ? 'OpenCode command sent' : 'Command send failed', command);
+      terminalUI?.focus();
+      return;
+    }
+
+    els.terminalInput.value = command;
     els.terminalInput.focus();
   });
 
