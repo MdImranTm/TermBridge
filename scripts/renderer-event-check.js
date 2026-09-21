@@ -197,7 +197,7 @@ const api = {
   providerModels: async () => ({ ok: true, models: [] }),
   openExternal: async () => true,
 };
-for (const name of ['onChatStream','onChatComplete','onChatStatus','onChatSession','onData','onStatus','onExit','onSetupComplete','onProjectChanged']) {
+for (const name of ['onChatStream','onChatComplete','onChatStatus','onChatSession','onEngineSync','onData','onStatus','onExit','onSetupComplete','onProjectChanged']) {
   api[name] = (cb) => { eventHandlers[name] = cb; return () => {}; };
 }
 
@@ -242,6 +242,7 @@ function assert(cond, message) {
     agentSelect: 'change', effortSelect: 'change', applyConfigBtn: 'click',
     capabilitiesBtn: 'click', sendBtn: 'click', stopBtn: 'click',
     launchCliBtn: 'click', clearTerminal: 'click', terminalSend: 'click',
+    terminalZoomOut: 'click', terminalZoomReset: 'click', terminalZoomIn: 'click', terminalExpand: 'click',
     closeSettings: 'click', newProviderBtn: 'click', providerForm: 'submit',
     providerSecretSource: 'change', providerType: 'change', testProviderBtn: 'click',
     useProviderBtn: 'click', deleteProviderBtn: 'click', paletteSearch: 'input'
@@ -291,8 +292,36 @@ function assert(cond, message) {
   assert(eventHandlers.onStatus, 'Terminal status event handler not registered');
   eventHandlers.onStatus({ status: 'starting', agent: 'opencode', cwd: 'C:\\Demo' });
   assert(get('engineBootText').textContent === 'Starting', 'Starting state did not render');
-  eventHandlers.onStatus({ status: 'ready', agent: 'opencode', cwd: 'C:\\Demo' });
+  eventHandlers.onStatus({ status: 'ready', agent: 'opencode', cwd: 'C:\\Demo', sessionId: 'ses_shared' });
   assert(get('engineBootText').textContent === 'Ready', 'Ready state did not render');
+
+  assert(eventHandlers.onEngineSync, 'Engine sync event handler not registered');
+  eventHandlers.onEngineSync({
+    agent: 'opencode',
+    sessionId: 'ses_shared',
+    model: 'openai/test-model',
+    subagent: 'build'
+  });
+  assert(get('modelSelect').value === 'openai/test-model', 'Synced OpenCode model did not update the model selector');
+  assert(get('agentSelect').value === 'build', 'Synced OpenCode agent did not update the agent selector');
+
+  const expandedBefore = get('mainGrid').classList.contains('terminal-expanded');
+  get('terminalExpand').click();
+  assert(get('mainGrid').classList.contains('terminal-expanded') !== expandedBefore, 'Terminal expand toggle did not work');
+
+  get('composer').value = 'hello from interaction test';
+  get('sendBtn').click();
+  await new Promise(r => setTimeout(r, 20));
+  assert(calls.sendChat.some(call => call.agent === 'opencode'), 'Chat send did not reach OpenCode');
+  assert(eventHandlers.onChatStatus, 'Chat status handler not registered');
+  eventHandlers.onChatStatus({ status: 'running', agent: 'opencode', destination: 'OpenCode', cwd: 'C:\\Demo' });
+  assert(eventHandlers.onChatComplete, 'Chat completion handler not registered');
+  eventHandlers.onChatComplete({
+    ok: true,
+    agent: 'opencode',
+    sessionId: 'ses_shared',
+    text: 'fast reply'
+  });
 
   console.log('Renderer interaction checks passed.');
   console.log('startAgent calls:', calls.startAgent.length);
