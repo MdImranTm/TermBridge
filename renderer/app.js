@@ -330,7 +330,7 @@ function newSession() {
   addActivity('New chat created', engineDisplayName());
 }
 
-async async function selectSession(id) {
+async function selectSession(id) {
   activeId = id;
   const session = activeSession();
   if (!session) return;
