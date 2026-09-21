@@ -351,8 +351,8 @@ async function selectSession(id) {
   };
 
   saveSessions();
-  await loadEngineCapabilities(false);
   renderAll(true);
+  await setEngine(state.agent);
 }
 
 function showSessionMenu(event, id) {
@@ -1862,7 +1862,14 @@ els.settingsBtn.addEventListener('click', () => openSettings('clis'));
 els.setupBtn.addEventListener('click', () => openSettings('clis'));
 els.missingToolAction.addEventListener('click', () => openSettings('clis'));
 
-els.modelSelect.addEventListener('change', updateCustomModelVisibility);
+els.engineSelect.addEventListener('change', () => setEngine(els.engineSelect.value));
+els.modelSelect.addEventListener('change', () => {
+  updateCustomModelVisibility();
+  if (els.modelSelect.value !== '__custom__') scheduleAutoApply();
+});
+els.customModelInput.addEventListener('change', scheduleAutoApply);
+els.agentSelect.addEventListener('change', scheduleAutoApply);
+els.effortSelect.addEventListener('change', scheduleAutoApply);
 els.applyConfigBtn.addEventListener('click', applyConfiguration);
 els.capabilitiesBtn.addEventListener('click', () => switchRightView('capabilities'));
 
@@ -1902,10 +1909,7 @@ $$('.welcome-card').forEach((button) => {
 });
 
 els.launchCliBtn.addEventListener('click', launchActiveCli);
-els.clearTerminal.addEventListener('click', () => {
-  terminalText = '';
-  els.terminalOutput.textContent = '';
-});
+els.clearTerminal.addEventListener('click', resetTerminalView);
 els.terminalSend.addEventListener('click', async () => {
   const value = els.terminalInput.value;
   if (!value) return;
@@ -1963,12 +1967,14 @@ els.paletteModal.addEventListener('click', (event) => {
 });
 
 document.addEventListener('keydown', (event) => {
-  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+  const inTerminal = els.terminalOutput.contains(event.target);
+
+  if (!inTerminal && (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
     event.preventDefault();
     openPalette();
   }
 
-  if (event.key === 'Escape') {
+  if (!inTerminal && event.key === 'Escape') {
     closePalette();
     closeSettings();
     hideCommandSuggestions();
@@ -1977,18 +1983,62 @@ document.addEventListener('keydown', (event) => {
 
 api.onData(({ raw, agent }) => {
   appendTerminal(raw);
-  if (agent === 'setup') setStatus('Installing…', 'busy');
+
+  if (agent === 'setup') {
+    setStatus('Installing…', 'busy');
+    setTerminalState('waiting', 'Installing');
+    setEngineBootState('starting', 'Install');
+  }
 });
 
 api.onStatus((status) => {
-  if (status.status === 'ready') setStatus('Ready', 'ok');
-  if (status.status === 'not-installed') setStatus('Not installed', 'error');
-  if (status.status === 'error') setStatus('Terminal error', 'error');
+  const label = TOOL_NAMES[status.agent] || status.agent || engineDisplayName();
+
+  if (status.status === 'starting') {
+    setStatus('Starting ' + label + '…', 'busy');
+    setEngineBootState('starting', 'Starting');
+    setTerminalState('waiting', 'Waiting');
+    els.terminalTitle.textContent = label;
+    els.terminalSubtitle.textContent = 'Booting real PTY · ' + (status.cwd || state.cwd || 'local workspace');
+    fitTerminalSoon();
+    return;
+  }
+
+  if (status.status === 'ready') {
+    if (!status.agent || status.agent === state.agent) {
+      setStatus(label + ' ready', 'ok');
+      setEngineBootState('ready', 'Ready');
+      setTerminalState('ready', 'Ready');
+      els.terminalTitle.textContent = label;
+      els.terminalSubtitle.textContent = 'Interactive PTY ready · keyboard input goes directly to the CLI';
+      fitTerminalSoon();
+    }
+    return;
+  }
+
+  if (status.status === 'not-installed') {
+    setStatus(label + ' not installed', 'error');
+    setEngineBootState('missing', 'Missing');
+    setTerminalState('missing', 'Setup');
+    return;
+  }
+
+  if (status.status === 'error') {
+    setStatus(label + ' terminal error', 'error');
+    setEngineBootState('error', 'Error');
+    setTerminalState('error', 'Error');
+  }
 });
 
-api.onExit(({ exitCode }) => {
+api.onExit(({ exitCode, agent }) => {
+  addActivity('Terminal exited', (TOOL_NAMES[agent] || agent || 'Terminal') + ' · Exit ' + exitCode);
+
+  // Ignore delayed exit notifications from a PTY that was intentionally
+  // replaced by a newer engine selection.
+  if (agent && agent !== state.agent) return;
+
   setStatus('Terminal exited', exitCode === 0 ? 'ok' : 'error');
-  addActivity('Terminal exited', 'Exit ' + exitCode);
+  setTerminalState(exitCode === 0 ? 'ready' : 'error', 'Exited');
 });
 
 api.onSetupComplete(async ({ agent, exitCode, tools }) => {
@@ -2099,6 +2149,10 @@ api.onChatComplete(({ ok, text, error, code, sessionId, agent }) => {
 });
 
 (async function init() {
+  initTerminalUI();
+  setEngineBootState('starting', 'Loading');
+  setTerminalState('waiting', 'Waiting');
+
   state = await api.getState();
   state.providers = Array.isArray(state.providers) ? state.providers : [];
 
@@ -2135,19 +2189,11 @@ api.onChatComplete(({ ok, text, error, code, sessionId, agent }) => {
   renderProject(state.project || null);
   renderProviders();
   renderSetup();
-  await loadEngineCapabilities(false);
   renderAll(true);
 
-  if (state.agent === 'provider') {
-    setStatus('API ready', 'ok');
-  } else {
-    const tool = state.tools[state.agent];
-    if (!CLI_AI_TOOLS.includes(state.agent) || tool?.installed) {
-      switchRightView('terminal');
-      const result = await api.startAgent(state.agent, options);
-      setStatus(result?.ok ? (engineDisplayName() + ' ready') : 'Terminal error', result?.ok ? 'ok' : 'error');
-    }
-  }
+  // Start the selected engine immediately. Capability probing happens in the
+  // background so selecting OpenCode/Codex/Claude never feels frozen.
+  await setEngine(state.agent);
 
-  els.composer.focus();
+  if (!terminalHasFocus()) els.composer.focus();
 })();
