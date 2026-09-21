@@ -209,6 +209,36 @@ function activeSession() {
   return sessions.find((session) => session.id === activeId) || null;
 }
 
+function currentEngineSessionId(agent = state.agent) {
+  const session = activeSession();
+  if (!session) return '';
+  const key = agent === 'provider' ? ('provider:' + selectedProviderId) : agent;
+  return session.engineSessionIds?.[key] || '';
+}
+
+function startOptionsFor(agent = state.agent) {
+  return {
+    ...options,
+    engineSessionId: currentEngineSessionId(agent)
+  };
+}
+
+function syncSessionEngineState(agent, sessionId, model = '', subagent = '') {
+  const session = activeSession();
+  if (!session) return;
+
+  session.engineSessionIds = session.engineSessionIds || {};
+  if (sessionId) session.engineSessionIds[agent] = sessionId;
+
+  if (agent === state.agent) {
+    if (model) options.model = model;
+    if (subagent) options.subagent = subagent;
+    session.options = { ...options };
+  }
+
+  saveSessions();
+}
+
 function setStatus(text, kind = 'ok') {
   els.statusText.textContent = text;
   els.statusDot.style.background =
@@ -829,7 +859,7 @@ async function setEngine(agent) {
   els.terminalTitle.textContent = engineDisplayName();
   els.terminalSubtitle.textContent = 'Starting real PTY in ' + (state.project?.path || state.cwd || 'local workspace');
 
-  const result = await api.startAgent(agent, options);
+  const result = await api.startAgent(agent, startOptionsFor(agent));
   if (token !== engineSwitchToken) return;
 
   if (!result?.ok) {
@@ -906,7 +936,7 @@ async function applyConfiguration() {
   setEngineBootState('starting', 'Applying');
   setTerminalState('waiting', 'Waiting');
 
-  const result = await api.startAgent(state.agent, options);
+  const result = await api.startAgent(state.agent, startOptionsFor(state.agent));
 
   if (!result?.ok) {
     setStatus('Configuration failed', 'error');
@@ -2058,6 +2088,10 @@ api.onData(({ raw, agent }) => {
 api.onStatus((status) => {
   const label = TOOL_NAMES[status.agent] || status.agent || engineDisplayName();
 
+  if (status.agent && status.sessionId) {
+    syncSessionEngineState(status.agent, status.sessionId);
+  }
+
   if (status.status === 'starting') {
     setStatus('Starting ' + label + '…', 'busy');
     setEngineBootState('starting', 'Starting');
@@ -2156,12 +2190,51 @@ api.onChatStatus(({ status, destination, cwd }) => {
 });
 
 api.onChatSession(({ agent, sessionId }) => {
-  const session = activeSession();
-  if (!session || !sessionId) return;
-  session.engineSessionIds = session.engineSessionIds || {};
-  session.engineSessionIds[agent] = sessionId;
-  saveSessions();
+  if (!agent || !sessionId) return;
+  syncSessionEngineState(agent, sessionId);
   addActivity('AI session linked', (TOOL_NAMES[agent] || agent) + ' · ' + sessionId);
+});
+
+api.onEngineSync(({ agent, sessionId, model, subagent }) => {
+  if (!agent) return;
+
+  syncSessionEngineState(agent, sessionId, model, subagent);
+
+  if (agent !== state.agent) return;
+
+  let changed = false;
+
+  if (model && options.model !== model) {
+    options.model = model;
+    const exists = [...els.modelSelect.options].some((option) => option.value === model);
+    if (exists) {
+      els.modelSelect.value = model;
+      els.customModelInput.classList.add('hidden');
+    } else {
+      els.modelSelect.value = '__custom__';
+      els.customModelInput.value = model;
+      els.customModelInput.classList.remove('hidden');
+    }
+    changed = true;
+  }
+
+  if (subagent && options.subagent !== subagent) {
+    options.subagent = subagent;
+    const exists = [...els.agentSelect.options].some((option) => option.value === subagent);
+    if (exists) els.agentSelect.value = subagent;
+    changed = true;
+  }
+
+  if (changed) {
+    const session = activeSession();
+    if (session) session.options = { ...options };
+    saveSessions();
+    renderChatHeader();
+    addActivity('Terminal state synced', [
+      model || '',
+      subagent || ''
+    ].filter(Boolean).join(' · '));
+  }
 });
 
 api.onChatStream(({ text }) => {
