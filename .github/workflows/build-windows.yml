@@ -55,6 +55,16 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
         run: npm run dist:win
 
+      - name: Verify packaged renderer syntax
+        shell: pwsh
+        run: |
+          npx asar extract release/win-unpacked/resources/app.asar $env:RUNNER_TEMP\tb-asar
+          node --check $env:RUNNER_TEMP\tb-asar\renderer\app.js
+          node --check $env:RUNNER_TEMP\tb-asar\main.js
+          node --check $env:RUNNER_TEMP\tb-asar\preload.js
+          $env:TB_APP_ROOT = "$env:RUNNER_TEMP\tb-asar"
+          node scripts/renderer-event-check.js
+
       - name: Verify build outputs
         shell: pwsh
         run: |
