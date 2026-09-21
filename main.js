@@ -9,6 +9,7 @@ const pty = require('node-pty');
 let mainWindow = null;
 let terminal = null;
 let chatProcess = null;
+let providerController = null;
 let projectRoot = null;
 let currentCwd = os.homedir();
 let currentAgent = 'powershell';
@@ -439,9 +440,12 @@ function providerHeaders(provider, secret) {
 
 async function fetchJson(url, options = {}, timeoutMs = 30000) {
   const controller = new AbortController();
+  const externalSignal = options.signal;
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetch(url, { ...options, signal: controller.signal });
+    const requestOptions = { ...options };
+    delete requestOptions.signal;
+    const response = await fetch(url, { ...requestOptions, signal: externalSignal || controller.signal });
     const raw = await response.text();
     let data = null;
     try {
@@ -548,6 +552,7 @@ async function runProviderChat(payload = {}) {
   if (!provider) return { ok: false, reason: 'provider-not-found' };
 
   send('chat:status', { status: 'running', agent: 'provider', providerId: provider.id });
+  providerController = new AbortController();
 
   try {
     const secret = providerSecret(provider);
@@ -586,7 +591,8 @@ async function runProviderChat(payload = {}) {
       {
         method: 'POST',
         headers: providerHeaders(provider, secret),
-        body: JSON.stringify(body)
+        body: JSON.stringify(body),
+        signal: providerController.signal
       },
       120000
     );
@@ -603,16 +609,19 @@ async function runProviderChat(payload = {}) {
       providerId: provider.id,
       text: text || 'The provider returned an empty response.'
     });
+    providerController = null;
     return { ok: true };
   } catch (error) {
+    providerController = null;
+    const aborted = error?.name === 'AbortError';
     send('chat:complete', {
       ok: false,
       agent: 'provider',
       providerId: provider.id,
-      error: error.message,
+      error: aborted ? 'Request stopped.' : error.message,
       text: ''
     });
-    return { ok: false, reason: error.message };
+    return { ok: false, reason: aborted ? 'Request stopped.' : error.message };
   }
 }
 
@@ -911,6 +920,7 @@ function createWindow() {
     minHeight: 680,
     backgroundColor: '#f7f8fa',
     title: 'TermBridge',
+    icon: path.join(__dirname, 'assets', 'icon.png'),
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -1047,10 +1057,12 @@ app.whenReady().then(() => {
 
   ipcMain.handle('chat:stop', () => {
     if (chatProcess) {
-      try {
-        chatProcess.kill();
-      } catch {}
+      try { chatProcess.kill(); } catch {}
       chatProcess = null;
+    }
+    if (providerController) {
+      try { providerController.abort(); } catch {}
+      providerController = null;
     }
     return true;
   });
@@ -1109,9 +1121,10 @@ app.whenReady().then(() => {
 app.on('before-quit', () => {
   stopTerminal();
   if (chatProcess) {
-    try {
-      chatProcess.kill();
-    } catch {}
+    try { chatProcess.kill(); } catch {}
+  }
+  if (providerController) {
+    try { providerController.abort(); } catch {}
   }
 });
 
