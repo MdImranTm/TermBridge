@@ -12,6 +12,35 @@ const TOOL_NAMES = {
 };
 
 const CLI_AI_TOOLS = ['codex', 'claude', 'opencode'];
+const TOOL_SLASH_COMMANDS = {
+  codex: [
+    { name: '/init', description: 'Create project instructions', source: 'Codex' },
+    { name: '/status', description: 'Show current session configuration', source: 'Codex' },
+    { name: '/permissions', description: 'Open permission controls', source: 'Codex' },
+    { name: '/model', description: 'Choose model and reasoning effort', source: 'Codex' },
+    { name: '/review', description: 'Review changes or project work', source: 'Codex' }
+  ],
+  claude: [
+    { name: '/help', description: 'Open Claude Code help', source: 'Claude Code' },
+    { name: '/model', description: 'Choose the active model', source: 'Claude Code' },
+    { name: '/permissions', description: 'Open permission controls', source: 'Claude Code' },
+    { name: '/mcp', description: 'Manage MCP integrations', source: 'Claude Code' },
+    { name: '/compact', description: 'Compact conversation context', source: 'Claude Code' },
+    { name: '/clear', description: 'Start with a clean conversation', source: 'Claude Code' }
+  ],
+  opencode: [
+    { name: '/help', description: 'Open OpenCode help', source: 'OpenCode' },
+    { name: '/new', description: 'Start a new OpenCode session', source: 'OpenCode' },
+    { name: '/sessions', description: 'List and switch sessions', source: 'OpenCode' },
+    { name: '/models', description: 'Choose an available model', source: 'OpenCode' },
+    { name: '/agents', description: 'Choose an available agent', source: 'OpenCode' },
+    { name: '/undo', description: 'Undo the latest work', source: 'OpenCode' },
+    { name: '/redo', description: 'Restore reverted work', source: 'OpenCode' },
+    { name: '/editor', description: 'Open the external prompt editor', source: 'OpenCode' },
+    { name: '/btw', description: 'Ask a side question without changing context', source: 'OpenCode' }
+  ]
+};
+
 const BUILTIN_COMMANDS = [
   { name: '/review', description: 'Review the selected project without making changes', source: 'TermBridge' },
   { name: '/new', description: 'Create a new chat', source: 'TermBridge' },
@@ -192,6 +221,7 @@ function newSession() {
     cwd: state.project?.path || '',
     hasProject: Boolean(state.project?.path),
     options: { ...options },
+    engineSessionIds: {},
     createdAt: Date.now(),
     messages: []
   };
@@ -398,6 +428,13 @@ function renderMessages(forceBottom = false) {
     text.textContent = message.text || (message.streaming ? 'Working…' : '');
 
     head.append(who, time);
+
+    if (message.delivery) {
+      const delivery = document.createElement('span');
+      delivery.className = 'message-delivery';
+      delivery.textContent = message.delivery;
+      head.appendChild(delivery);
+    }
     body.append(head, text);
     row.append(avatar, body);
     els.messages.appendChild(row);
@@ -414,15 +451,17 @@ function renderMessages(forceBottom = false) {
   });
 }
 
-function addMessage(role, text, forceBottom = false) {
+function addMessage(role, text, forceBottom = false, delivery = '') {
   if (!activeId) newSession();
   const session = activeSession();
+  const id = uid();
 
   session.messages.push({
-    id: uid(),
+    id,
     role,
     text: String(text || ''),
-    at: Date.now()
+    at: Date.now(),
+    delivery
   });
 
   if (role === 'user' && (!session.title || session.title === 'New chat')) {
@@ -433,6 +472,7 @@ function addMessage(role, text, forceBottom = false) {
   renderSessions();
   renderChatHeader();
   renderMessages(forceBottom);
+  return id;
 }
 
 function renderToolTabs() {
@@ -629,12 +669,24 @@ async function setEngine(agent) {
     if (tool && !tool.installed) {
       setStatus('Not installed', 'error');
       openSettings('clis');
+      return;
+    }
+
+    switchRightView('terminal');
+    setStatus('Opening ' + engineDisplayName() + '…', 'busy');
+    const result = await api.startAgent(agent, options);
+
+    if (result?.ok) {
+      setStatus(engineDisplayName() + ' ready', 'ok');
+      addActivity('Interactive CLI auto-opened', engineDisplayName());
     } else {
-      setStatus('Ready', 'ok');
+      setStatus('CLI launch failed', 'error');
+      addActivity('CLI launch failed', engineDisplayName());
     }
   } else if (agent === 'provider') {
     setStatus('API ready', 'ok');
   } else {
+    switchRightView('terminal');
     setStatus('Starting terminal…', 'busy');
     const result = await api.startAgent(agent, {});
     setStatus(result?.ok ? 'Ready' : 'Terminal error', result?.ok ? 'ok' : 'error');
@@ -683,7 +735,9 @@ async function applyConfiguration() {
       return;
     }
 
-    setStatus('Configuration applied', 'ok');
+    setStatus('Applying configuration…', 'busy');
+    const result = await api.startAgent(state.agent, options);
+    setStatus(result?.ok ? 'Configuration applied' : 'CLI launch failed', result?.ok ? 'ok' : 'error');
     addActivity('AI configuration applied', engineDisplayName() + (options.model !== 'Default' ? ' · ' + options.model : ''));
     return;
   }
@@ -936,29 +990,53 @@ async function sendMessage(override, review = false) {
     return;
   }
 
-  addMessage('user', text, true);
+  const isAI = CLI_AI_TOOLS.includes(state.agent) || state.agent === 'provider';
+  const destination = engineDisplayName();
+  const userMessageId = addMessage(
+    'user',
+    text,
+    true,
+    isAI ? ('Sending to ' + destination + '…') : ('Sending to ' + destination + ' terminal…')
+  );
+
   els.composer.value = '';
   resizeComposer();
   hideCommandSuggestions();
 
-  const isAI = CLI_AI_TOOLS.includes(state.agent) || state.agent === 'provider';
   pendingResponse = isAI;
-  setStatus(isAI ? 'Working…' : 'Running…', 'busy');
+  setStatus(isAI ? ('Sending to ' + destination + '…') : 'Running…', 'busy');
 
   if (isAI) {
     els.stopBtn.classList.remove('hidden');
     els.sendBtn.classList.add('hidden');
 
     let result;
+    const session = activeSession();
+    const engineKey = state.agent === 'provider'
+      ? ('provider:' + selectedProviderId)
+      : state.agent;
+    const engineSessionId = session?.engineSessionIds?.[engineKey] || '';
+
     if (state.agent === 'provider') {
-      const session = activeSession();
       result = await api.sendProviderChat(
         selectedProviderId,
         options.model === 'Default' ? '' : options.model,
         sessionMessagesForProvider(session)
       );
     } else {
-      result = await api.sendChat(state.agent, text, options);
+      result = await api.sendChat(state.agent, text, {
+        ...options,
+        engineSessionId
+      });
+    }
+
+    const sentMessage = session?.messages.find((item) => item.id === userMessageId);
+    if (sentMessage) {
+      sentMessage.delivery = result?.ok
+        ? ('Sent to ' + destination + (state.project?.name ? ' · ' + state.project.name : ''))
+        : ('Failed to send to ' + destination);
+      saveSessions();
+      renderMessages(false);
     }
 
     if (!result?.ok) {
@@ -1023,12 +1101,14 @@ async function runBuiltinCommand(input) {
 
 function allCommands() {
   const runtime = (currentCapabilities.commands || []).map((item) => ({
-    name: item.name.startsWith('/') ? item.name : item.name,
+    name: item.name,
     description: item.description || 'Runtime CLI command',
     source: engineDisplayName()
   }));
 
-  return [...BUILTIN_COMMANDS, ...runtime].filter((item, index, array) => {
+  const slash = TOOL_SLASH_COMMANDS[state.agent] || [];
+
+  return [...BUILTIN_COMMANDS, ...slash, ...runtime].filter((item, index, array) => {
     return array.findIndex((candidate) => candidate.name === item.name) === index;
   });
 }
@@ -1178,13 +1258,22 @@ function renderPalette(query = '') {
   }
 }
 
+function cleanTerminalRaw(raw) {
+  return String(raw || '')
+    .replace(/\x1b\][^\x07]*(?:\x07|\x1b\\)/g, '')
+    .replace(/\x1b\[[0-?]*[ -\/]*[@-~]/g, '')
+    .replace(/\x1b[=>]/g, '')
+    .replace(/\r(?!\n)/g, '\n')
+    .replace(/[\u0000\u0008]/g, '');
+}
+
 function appendTerminal(raw) {
   const nearBottom =
     els.terminalOutput.scrollHeight -
       (els.terminalOutput.scrollTop + els.terminalOutput.clientHeight) <
     70;
 
-  terminalText += String(raw || '');
+  terminalText += cleanTerminalRaw(raw);
   if (terminalText.length > 240000) terminalText = terminalText.slice(-180000);
   els.terminalOutput.textContent = terminalText;
 
@@ -1772,19 +1861,26 @@ api.onSetupComplete(async ({ agent, exitCode, tools }) => {
 
 api.onProjectChanged((project) => renderProject(project));
 
-api.onChatStatus(({ status }) => {
+api.onChatStatus(({ status, destination, cwd }) => {
   if (status !== 'running') return;
 
   pendingResponse = true;
   els.stopBtn.classList.remove('hidden');
   els.sendBtn.classList.add('hidden');
-  setStatus('Working…', 'busy');
+  setStatus('Working in ' + (destination || engineDisplayName()) + '…', 'busy');
 
   streamingText = '';
   streamingAssistantId = uid();
 
   const session = activeSession();
   if (!session) return;
+
+  const lastUser = [...session.messages].reverse().find((item) => item.role === 'user');
+  if (lastUser && String(lastUser.delivery || '').startsWith('Sending')) {
+    lastUser.delivery =
+      'Sent to ' + (destination || engineDisplayName()) +
+      (cwd ? ' · ' + cwd : '');
+  }
 
   session.messages.push({
     id: streamingAssistantId,
@@ -1796,6 +1892,15 @@ api.onChatStatus(({ status }) => {
 
   saveSessions();
   renderMessages(false);
+});
+
+api.onChatSession(({ agent, sessionId }) => {
+  const session = activeSession();
+  if (!session || !sessionId) return;
+  session.engineSessionIds = session.engineSessionIds || {};
+  session.engineSessionIds[agent] = sessionId;
+  saveSessions();
+  addActivity('AI session linked', (TOOL_NAMES[agent] || agent) + ' · ' + sessionId);
 });
 
 api.onChatStream(({ text }) => {
@@ -1811,19 +1916,25 @@ api.onChatStream(({ text }) => {
   renderMessages(false);
 });
 
-api.onChatComplete(({ ok, text, error, code }) => {
+api.onChatComplete(({ ok, text, error, code, sessionId, agent }) => {
   const session = activeSession();
   const message = session?.messages.find((item) => item.id === streamingAssistantId);
   const finalText = String(text || streamingText || '').trim();
+
+  if (session && sessionId && agent) {
+    session.engineSessionIds = session.engineSessionIds || {};
+    session.engineSessionIds[agent] = sessionId;
+  }
 
   if (message) {
     message.streaming = false;
     message.text =
       finalText ||
-      (ok
-        ? 'Completed.'
-        : 'Command failed' +
-          (error ? ': ' + error : code != null ? ' (exit ' + code + ')' : '.'));
+      (error
+        ? error
+        : (ok
+          ? 'The engine completed but did not return a visible reply.'
+          : 'Command failed' + (code != null ? ' (exit ' + code + ')' : '.')));
   } else if (finalText) {
     addMessage('assistant', finalText, false);
   }
@@ -1880,8 +1991,15 @@ api.onChatComplete(({ ok, text, error, code }) => {
   await loadEngineCapabilities(false);
   renderAll(true);
 
-  if (state.agent === 'powershell' || state.agent === 'cmd') {
-    await api.startAgent(state.agent, options);
+  if (state.agent === 'provider') {
+    setStatus('API ready', 'ok');
+  } else {
+    const tool = state.tools[state.agent];
+    if (!CLI_AI_TOOLS.includes(state.agent) || tool?.installed) {
+      switchRightView('terminal');
+      const result = await api.startAgent(state.agent, options);
+      setStatus(result?.ok ? (engineDisplayName() + ' ready') : 'Terminal error', result?.ok ? 'ok' : 'error');
+    }
   }
 
   els.composer.focus();
