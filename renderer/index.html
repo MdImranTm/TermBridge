@@ -109,7 +109,7 @@
         <button id="applyConfigBtn" class="control-button">Apply</button>
       </section>
 
-      <section class="main-grid">
+      <section id="mainGrid" class="main-grid">
         <aside class="project-panel">
           <div class="panel-head">
             <div><strong>Project</strong><span id="projectPath">Choose a folder to start</span></div>
@@ -195,6 +195,10 @@
               <div><strong id="terminalTitle">Interactive terminal</strong><span id="terminalSubtitle">Real PTY · CLI/TUI keyboard input works here</span></div>
               <div class="terminal-actions">
                 <span id="terminalState" class="terminal-state waiting"><span class="mini-spinner"></span><span>Waiting</span></span>
+                <button id="terminalZoomOut" class="small-button" title="Zoom terminal out">−</button>
+                <button id="terminalZoomReset" class="small-button terminal-zoom-label" title="Reset terminal zoom">80%</button>
+                <button id="terminalZoomIn" class="small-button" title="Zoom terminal in">+</button>
+                <button id="terminalExpand" class="small-button" title="Expand terminal panel">Expand</button>
                 <button id="launchCliBtn" class="small-button">Open CLI</button>
                 <button id="clearTerminal" class="small-button">Clear</button>
               </div>
