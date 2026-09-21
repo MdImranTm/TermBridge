@@ -8,7 +8,7 @@
   "scripts": {
     "dev": "electron .",
     "postinstall": "electron-builder install-app-deps",
-    "dist:win": "electron-builder --win nsis portable --x64"
+    "dist:win": "electron-builder --win nsis portable --x64 --publish never"
   },
   "dependencies": {
     "node-pty": "^1.1.0"
@@ -20,18 +20,9 @@
   "build": {
     "appId": "com.termbridge.desktop",
     "productName": "TermBridge",
-    "directories": {
-      "output": "release"
-    },
-    "files": [
-      "main.js",
-      "preload.js",
-      "renderer/**/*",
-      "package.json"
-    ],
-    "asarUnpack": [
-      "node_modules/node-pty/**/*"
-    ],
+    "directories": { "output": "release" },
+    "files": ["main.js","preload.js","renderer/**/*","package.json"],
+    "asarUnpack": ["node_modules/node-pty/**/*"],
     "win": {
       "target": [
         { "target": "nsis", "arch": ["x64"] },
@@ -48,11 +39,7 @@
       "runAfterFinish": true,
       "artifactName": "TermBridge-${version}-Setup.${ext}"
     },
-    "portable": {
-      "artifactName": "TermBridge-${version}-Portable.${ext}"
-    }
+    "portable": { "artifactName": "TermBridge-${version}-Portable.${ext}" }
   },
-  "engines": {
-    "node": ">=22"
-  }
+  "engines": { "node": ">=22" }
 }
