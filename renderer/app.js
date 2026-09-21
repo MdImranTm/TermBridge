@@ -1507,11 +1507,11 @@ function renderActivity() {
 }
 
 function switchRightView(view) {
-  $('.right-tab').forEach((button) => {
+  $$('.right-tab').forEach((button) => {
     button.classList.toggle('active', button.dataset.view === view);
   });
 
-  $('.right-view').forEach((panel) => {
+  $$('.right-view').forEach((panel) => {
     panel.classList.toggle('active', panel.id === view + 'View');
   });
 
