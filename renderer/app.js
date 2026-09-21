@@ -1562,7 +1562,7 @@ function updateSecretFields() {
 
 function updateProviderTypeFields() {
   const custom = els.providerType.value === 'custom';
-  $('.custom-only').forEach((element) => element.classList.toggle('hidden', !custom));
+  document.querySelectorAll('.custom-only').forEach((element) => element.classList.toggle('hidden', !custom));
 }
 
 function providerFormValue() {
