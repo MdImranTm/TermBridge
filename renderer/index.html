@@ -3,51 +3,44 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:;">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:;">
   <title>TermBridge</title>
   <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
-  <div class="app-shell">
+  <div class="app">
     <aside class="sidebar">
       <div class="brand">
-        <div class="brand-logo" aria-hidden="true">
-          <svg viewBox="0 0 40 40">
-            <circle cx="20" cy="20" r="16"></circle>
-            <path d="M13 15.5 17.5 20 13 24.5M20 25h7"></path>
-            <circle cx="29.5" cy="11" r="2.2"></circle>
-          </svg>
-        </div>
-        <div class="brand-text">
+        <img class="brand-logo" src="../assets/icon.png" alt="TermBridge" />
+        <div class="brand-copy">
           <strong>TermBridge</strong>
           <span>AI coding workspace</span>
         </div>
       </div>
 
-      <button id="newChat" class="new-chat-btn">
-        <span class="button-icon">＋</span>
-        <span>New chat</span>
-      </button>
+      <button id="newChat" class="new-chat">＋ <span>New chat</span></button>
 
-      <div class="sidebar-section-head">
-        <span>CONVERSATIONS</span>
-        <button id="chatSearchBtn" class="icon-button" title="Search chats">⌕</button>
+      <div class="section-label">WORKSPACE</div>
+      <button class="nav-item active" data-nav="chats"><span class="nav-icon">◫</span>Chats</button>
+      <button id="projectsNav" class="nav-item" data-nav="projects"><span class="nav-icon">▰</span>Projects</button>
+      <button id="providersNav" class="nav-item" data-nav="providers"><span class="nav-icon">⌁</span>Providers & APIs</button>
+
+      <div class="recent-head">
+        <span>RECENT CHATS</span>
+        <button id="chatSearchBtn" class="icon-btn" title="Search chats">⌕</button>
       </div>
 
-      <div id="chatSearchWrap" class="sidebar-search hidden">
+      <div id="chatSearchWrap" class="side-search hidden">
         <input id="chatSearch" type="text" placeholder="Search chats…" autocomplete="off" />
       </div>
 
       <div id="sessionList" class="session-list"></div>
 
-      <div class="sidebar-footer">
-        <button id="setupBtn" class="footer-action">
-          <span class="footer-action-icon">⚙</span>
-          <span class="footer-action-copy">
-            <b>CLI setup & status</b>
-            <small id="setupSummary">Checking installed tools…</small>
-          </span>
-          <span class="footer-chevron">›</span>
+      <div class="sidebar-foot">
+        <button id="setupBtn" class="setup-button">
+          <span class="setup-icon">⚙</span>
+          <span class="setup-copy"><b>CLI setup & status</b><small id="setupSummary">Checking tools…</small></span>
+          <span class="setup-arrow">›</span>
         </button>
         <div class="local-note">
           <span class="online-dot"></span>
@@ -58,46 +51,41 @@
 
     <main class="workspace">
       <header class="topbar">
-        <div class="workspace-title">
-          <button id="projectBtn" class="project-button" title="Choose project folder">
+        <div class="top-left">
+          <button id="projectBtn" class="project-button">
             <span class="project-icon">▰</span>
-            <span class="project-button-copy">
-              <small>WORKSPACE</small>
-              <b id="projectName">No project selected</b>
-            </span>
-            <span class="project-chevron">⌄</span>
+            <span class="project-copy"><small>PROJECT</small><b id="projectName">No project selected</b></span>
+            <span class="chevron">⌄</span>
           </button>
-          <button id="openFolderBtn" class="top-action">Open folder</button>
+          <button id="openFolderBtn" class="top-button">Open folder</button>
         </div>
 
-        <div class="top-actions">
-          <button id="reviewBtn" class="top-action primary-action">Review project</button>
-          <div class="status-pill">
-            <span id="statusDot" class="status-dot"></span>
-            <span id="statusText">Ready</span>
-          </div>
-          <button id="restartBtn" class="icon-button top-icon" title="Restart terminal">↻</button>
+        <div class="top-right">
+          <button id="commandPaletteBtn" class="command-search">
+            <span>Search commands & settings…</span>
+            <kbd>Ctrl K</kbd>
+          </button>
+          <button id="reviewBtn" class="top-button primary">Review project</button>
+          <div class="status-pill"><span id="statusDot" class="status-dot"></span><span id="statusText">Ready</span></div>
+          <button id="settingsBtn" class="icon-btn" title="Settings">⚙</button>
         </div>
       </header>
 
       <section class="enginebar">
-        <div class="engine-block">
-          <label>ENGINE</label>
-          <div id="toolTabs" class="tool-tabs"></div>
-        </div>
+        <div id="toolTabs" class="tool-tabs"></div>
 
-        <div class="engine-control model-control">
+        <div class="control model-control">
           <label>MODEL</label>
           <select id="modelSelect"></select>
-          <input id="customModelInput" class="hidden" type="text" placeholder="provider/model or model id" />
+          <input id="customModelInput" class="hidden" type="text" placeholder="Custom model id" />
         </div>
 
-        <div class="engine-control">
-          <label>AGENT</label>
+        <div class="control">
+          <label>AGENT / MODE</label>
           <select id="agentSelect"></select>
         </div>
 
-        <div class="engine-control reasoning-control">
+        <div class="control reason-control">
           <label>REASONING</label>
           <select id="effortSelect">
             <option value="default">Default</option>
@@ -108,24 +96,21 @@
           </select>
         </div>
 
-        <button id="applyConfigBtn" class="apply-btn">Apply</button>
+        <button id="capabilitiesBtn" class="control-button">Detected options</button>
+        <button id="applyConfigBtn" class="control-button">Apply</button>
       </section>
 
       <section class="main-grid">
         <aside class="project-panel">
-          <div class="panel-header">
-            <div>
-              <strong>Project files</strong>
-              <span id="projectPath">Choose a folder to start</span>
-            </div>
-            <button id="refreshProjectBtn" class="icon-button" title="Refresh project">↻</button>
+          <div class="panel-head">
+            <div><strong>Project</strong><span id="projectPath">Choose a folder to start</span></div>
+            <button id="refreshProjectBtn" class="icon-btn">↻</button>
           </div>
 
           <div id="projectMeta" class="project-meta">
             <div class="empty-panel">
-              <div class="empty-icon">▰</div>
               <b>No project open</b>
-              <span>Select a folder. TermBridge will not review or modify it until you ask.</span>
+              <span>Select a folder. Nothing is reviewed or modified automatically.</span>
             </div>
           </div>
 
@@ -138,40 +123,31 @@
         </aside>
 
         <section class="chat-panel">
-          <div class="chat-header">
-            <div>
-              <strong id="chatTitle">New chat</strong>
-              <span id="chatSubtitle">Select an AI engine or use a local shell</span>
-            </div>
-            <div class="chat-header-meta">
-              <span id="activeAgentLabel">PowerShell</span>
-            </div>
+          <div class="chat-head">
+            <div><strong id="chatTitle">New chat</strong><span id="chatSubtitle">Select an engine or open a project</span></div>
+            <div id="activeAgentLabel" class="chat-engine-pill">PowerShell</div>
           </div>
 
           <div id="welcome" class="welcome">
-            <div class="welcome-logo">
-              <svg viewBox="0 0 44 44">
-                <circle cx="22" cy="22" r="18"></circle>
-                <path d="M14 17 19 22 14 27M22 28h8"></path>
-                <circle cx="32" cy="12" r="2.3"></circle>
-              </svg>
-            </div>
-            <h1>One workspace for your coding CLIs.</h1>
-            <p>Open a project, choose Codex, Claude Code, OpenCode, PowerShell or CMD, then work through a clean chat interface. Raw terminal output stays in the terminal panel.</p>
+            <div class="welcome-inner">
+              <img class="hero-logo" src="../assets/icon.png" alt="" />
+              <h1>Simple chat. Serious coding workspace.</h1>
+              <p>ChatGPT/Claude-style conversation, Cursor-style project tools, real local CLI execution and clean separation between chat output and raw terminal output.</p>
 
-            <div class="welcome-actions">
-              <button class="welcome-card" data-action="folder">
-                <span class="welcome-card-icon">▰</span>
-                <span><b>Open project</b><small>Choose the folder you want to work on</small></span>
-              </button>
-              <button class="welcome-card" data-action="review">
-                <span class="welcome-card-icon">◎</span>
-                <span><b>Review project</b><small>Only starts when you explicitly request it</small></span>
-              </button>
-              <button class="welcome-card" data-prompt="Explain the selected project's architecture and current structure. Do not modify any files.">
-                <span class="welcome-card-icon">⌁</span>
-                <span><b>Explain project</b><small>Understand the codebase before editing</small></span>
-              </button>
+              <div class="welcome-cards">
+                <button class="welcome-card" data-action="folder">
+                  <b>Open project</b>
+                  <span>Choose a project folder and continue working inside it.</span>
+                </button>
+                <button class="welcome-card" data-action="commands">
+                  <b>Command palette</b>
+                  <span>Search runtime-detected CLI commands and settings.</span>
+                </button>
+                <button class="welcome-card" data-action="providers">
+                  <b>Add custom API</b>
+                  <span>Configure an OpenAI-compatible, Anthropic-compatible or custom REST provider.</span>
+                </button>
+              </div>
             </div>
           </div>
 
@@ -180,56 +156,52 @@
 
           <div class="composer-area">
             <div id="missingToolBanner" class="missing-tool hidden">
-              <div>
-                <b id="missingToolTitle">CLI is not installed</b>
-                <span id="missingToolText">Open setup to install or configure this tool.</span>
-              </div>
+              <div><b id="missingToolTitle">CLI not installed</b><span id="missingToolText">Open setup to install or configure it.</span></div>
               <button id="missingToolAction">Open setup</button>
             </div>
 
+            <div id="commandSuggest" class="command-suggest hidden"></div>
+
             <div class="composer">
-              <textarea id="composer" rows="1" placeholder="Message the active engine…" spellcheck="true"></textarea>
-              <button id="stopBtn" class="stop-btn hidden" title="Stop response">■</button>
+              <textarea id="composer" rows="1" placeholder="Message the active engine, or type / for commands…" spellcheck="true"></textarea>
+              <button id="stopBtn" class="stop-btn hidden" title="Stop">■</button>
               <button id="sendBtn" class="send-btn" title="Send">➤</button>
             </div>
-            <div class="composer-footer">
-              <span>Enter to send · Shift+Enter for new line</span>
-              <span id="workspaceSafety">Project review never runs automatically</span>
+            <div class="composer-foot">
+              <span>Enter to send · Shift+Enter for new line · / for commands</span>
+              <span>Review never runs automatically</span>
             </div>
           </div>
         </section>
 
         <aside class="right-panel">
-          <div class="right-panel-tabs">
+          <div class="right-tabs">
             <button class="right-tab active" data-view="terminal">Terminal</button>
             <button class="right-tab" data-view="activity">Activity</button>
+            <button class="right-tab" data-view="capabilities">Options</button>
           </div>
 
           <div id="terminalView" class="right-view active">
-            <div class="terminal-header">
-              <div>
-                <strong>Raw terminal</strong>
-                <span>Commands, tool output and interactive CLI</span>
-              </div>
+            <div class="terminal-head">
+              <div><strong>Raw terminal</strong><span>Interactive CLI/TUI output stays here</span></div>
               <div class="terminal-actions">
-                <button id="launchCliBtn" class="text-button">Open CLI</button>
-                <button id="clearTerminal" class="text-button">Clear</button>
+                <button id="launchCliBtn" class="small-button">Open CLI</button>
+                <button id="clearTerminal" class="small-button">Clear</button>
               </div>
             </div>
             <pre id="terminalOutput" class="terminal-output"></pre>
-            <div class="terminal-command">
+            <div class="terminal-input">
               <input id="terminalInput" type="text" placeholder="Send raw terminal input…" autocomplete="off" />
               <button id="terminalSend">Send</button>
             </div>
           </div>
 
           <div id="activityView" class="right-view">
-            <div id="activityList" class="activity-list">
-              <div class="empty-panel compact">
-                <b>No activity yet</b>
-                <span>Engine changes, setup events and project actions will appear here.</span>
-              </div>
-            </div>
+            <div id="activityList" class="activity-list"></div>
+          </div>
+
+          <div id="capabilitiesView" class="right-view">
+            <div id="capabilitiesList" class="capabilities-list"></div>
           </div>
         </aside>
       </section>
@@ -242,22 +214,96 @@
     <button data-session-action="clear">Clear messages</button>
     <button data-session-action="export">Export chat</button>
     <div class="menu-separator"></div>
-    <button data-session-action="delete" class="danger-item">Delete chat</button>
+    <button class="danger" data-session-action="delete">Delete chat</button>
   </div>
 
-  <div id="setupModal" class="modal-backdrop hidden">
-    <div class="setup-modal">
-      <div class="modal-header">
-        <div>
-          <strong>CLI setup</strong>
-          <span>Install, detect and configure supported coding tools.</span>
+  <div id="settingsModal" class="overlay hidden">
+    <div class="settings-modal">
+      <div class="modal-head">
+        <div><strong>TermBridge settings</strong><span>CLI setup, custom providers and API configuration</span></div>
+        <button id="closeSettings" class="icon-btn">×</button>
+      </div>
+
+      <div class="modal-tabs">
+        <button class="modal-tab active" data-tab="clis">Installed CLIs</button>
+        <button class="modal-tab" data-tab="providers">Custom APIs</button>
+      </div>
+
+      <div id="clisTab" class="modal-body">
+        <div id="setupList" class="setup-list"></div>
+        <div class="modal-note">TermBridge can install supported npm CLIs. Official account login, provider authorization, billing and API-key approval still require your action.</div>
+      </div>
+
+      <div id="providersTab" class="modal-body hidden">
+        <div class="provider-layout">
+          <aside class="provider-sidebar">
+            <button id="newProviderBtn" class="new-provider">＋ Add provider / API</button>
+            <div id="providerList" class="provider-list"></div>
+          </aside>
+
+          <section class="provider-editor">
+            <div id="providerEmpty" class="provider-empty">
+              <b>No provider selected</b>
+              <span>Add or select a provider to configure it.</span>
+            </div>
+
+            <form id="providerForm" class="provider-form hidden">
+              <input id="providerId" type="hidden" />
+
+              <div class="form-grid">
+                <label class="field"><span>Provider name</span><input id="providerName" required placeholder="My Provider" /></label>
+                <label class="field"><span>Adapter type</span>
+                  <select id="providerType">
+                    <option value="openai">OpenAI-compatible</option>
+                    <option value="anthropic">Anthropic-compatible</option>
+                    <option value="custom">Custom REST</option>
+                  </select>
+                </label>
+
+                <label class="field full"><span>Base URL</span><input id="providerBaseUrl" required placeholder="https://api.example.com/v1" /></label>
+
+                <label class="field"><span>Secret source</span>
+                  <select id="providerSecretSource">
+                    <option value="vault">Encrypted local vault</option>
+                    <option value="env">Environment variable</option>
+                    <option value="none">No authentication</option>
+                  </select>
+                </label>
+                <label class="field"><span>Secret reference</span><input id="providerSecretRef" placeholder="MY_PROVIDER_API_KEY" /></label>
+
+                <label class="field full" id="apiKeyField"><span>API key (leave blank to keep saved key)</span><input id="providerApiKey" type="password" autocomplete="new-password" placeholder="••••••••" /></label>
+
+                <label class="field"><span>Models endpoint</span><input id="providerModelsPath" value="/models" /></label>
+                <label class="field"><span>Chat endpoint</span><input id="providerChatPath" value="/chat/completions" /></label>
+
+                <label class="field full"><span>Default model</span><input id="providerDefaultModel" placeholder="model-id" /></label>
+                <label class="field full"><span>Extra headers (JSON)</span><textarea id="providerHeaders" rows="4">{}</textarea></label>
+              </div>
+
+              <div class="provider-actions">
+                <button id="saveProviderBtn" type="submit" class="primary-button">Save provider</button>
+                <button id="testProviderBtn" type="button">Test connection</button>
+                <button id="useProviderBtn" type="button">Use in chat</button>
+                <button id="deleteProviderBtn" type="button" class="danger-button">Delete</button>
+              </div>
+
+              <div id="providerResult" class="provider-result hidden"></div>
+            </form>
+          </section>
         </div>
-        <button id="closeSetup" class="icon-button modal-close">×</button>
       </div>
-      <div id="setupList" class="setup-list"></div>
-      <div class="setup-footnote">
-        TermBridge can launch supported installers when prerequisites are available. Sign-in, provider authorization, API keys and billing confirmations still require your approval in the CLI.
+    </div>
+  </div>
+
+  <div id="paletteModal" class="overlay hidden">
+    <div class="palette">
+      <div class="palette-search">
+        <span>⌕</span>
+        <input id="paletteSearch" type="text" placeholder="Search commands, settings and detected capabilities…" autocomplete="off" />
+        <kbd>Esc</kbd>
       </div>
+      <div id="paletteList" class="palette-list"></div>
+      <div class="palette-foot"><span>Runtime CLI options are refreshed from the installed version.</span><span>Enter to select</span></div>
     </div>
   </div>
 
