@@ -84,8 +84,20 @@ if (!html.includes('@xterm/xterm/lib/xterm.js') || !html.includes('@xterm/addon-
   throw new Error('Interactive xterm runtime assets are not wired into the renderer.');
 }
 
-if (!app.includes('async function selectSession(id)')) {
+if (/\basync\s+async\b/.test(app)) {
+  throw new Error('Duplicate async keyword found in renderer.');
+}
+
+if (!/\basync\s+function\s+selectSession\s*\(id\)/.test(app)) {
   throw new Error('Chat/session switching must remain async because it restores projects and engines.');
+}
+
+const invalidSingleSelectorForEach = [...app.matchAll(/(^|[^$])\$\([^)]+\)\.forEach/gm)];
+if (invalidSingleSelectorForEach.length) {
+  throw new Error(
+    'Single-element selector used with forEach: ' +
+    invalidSingleSelectorForEach.map((m) => m[0].trim()).join(', ')
+  );
 }
 
 if (!app.includes("$('.right-tab').forEach") || !app.includes("$('.right-view').forEach")) {
