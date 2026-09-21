@@ -2,7 +2,7 @@ const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
 const os = require('os');
 const fs = require('fs');
-const { execFile } = require('child_process');
+const { execFile, spawn } = require('child_process');
 const pty = require('node-pty');
 
 let mainWindow = null;
@@ -10,6 +10,7 @@ let terminal = null;
 let currentCwd = os.homedir();
 let currentAgent = 'powershell';
 let terminalLaunch = null;
+let chatProcess = null;
 
 const TOOLS = {
   powershell: { label: 'PowerShell', command: 'powershell.exe', kind: 'shell' },
@@ -202,6 +203,125 @@ async function startTerminal(agent = currentAgent, cwd = currentCwd, options = {
   return { ok: true, agent: currentAgent, cwd: currentCwd, launch };
 }
 
+
+function extractJsonText(obj) {
+  const found = [];
+  const visit = (value, key = '') => {
+    if (value == null) return;
+    if (typeof value === 'string') {
+      if (['text','message','content','output_text','final_output'].includes(key) && value.trim()) found.push(value.trim());
+      return;
+    }
+    if (Array.isArray(value)) return value.forEach(v => visit(v, key));
+    if (typeof value === 'object') {
+      for (const [k,v] of Object.entries(value)) visit(v, k);
+    }
+  };
+  visit(obj);
+  return [...new Set(found)].join('\n');
+}
+
+function buildChatCommand(agent, prompt, options = {}) {
+  const model = options.model && options.model !== 'Default' ? String(options.model) : '';
+  const subagent = options.subagent && options.subagent !== 'Default' ? String(options.subagent) : '';
+  if (agent === 'codex') {
+    const args = ['exec','--json'];
+    if (model) args.push('--model', model);
+    if (options.effort && options.effort !== 'default') args.push('-c', 'model_reasoning_effort="' + options.effort + '"');
+    args.push(prompt);
+    return { command:'codex', args, json:true };
+  }
+  if (agent === 'claude') {
+    const args = ['-p', prompt, '--output-format', 'stream-json'];
+    if (model) args.push('--model', model);
+    return { command:'claude', args, json:true };
+  }
+  if (agent === 'opencode') {
+    const args = ['run'];
+    if (model) args.push('--model', model);
+    if (subagent) args.push('--agent', subagent);
+    args.push(prompt);
+    return { command:'opencode', args, json:false };
+  }
+  return null;
+}
+
+async function runChatPrompt(agent, prompt, options = {}) {
+  const spec = buildChatCommand(agent, prompt, options);
+  if (!spec) return { ok:false, reason:'not-ai' };
+  if (!(await commandExists(spec.command))) return { ok:false, reason:'not-installed' };
+  if (chatProcess) {
+    try { chatProcess.kill(); } catch {}
+    chatProcess = null;
+  }
+
+  send('chat:status', { status:'running', agent });
+  const proc = spawn(spec.command, spec.args, {
+    cwd: currentCwd,
+    windowsHide: true,
+    shell: false,
+    env: { ...process.env, TERM:'dumb', NO_COLOR:'1', FORCE_COLOR:'0' }
+  });
+  chatProcess = proc;
+
+  let lineBuffer = '';
+  let finalParts = [];
+  let plainBuffer = '';
+
+  const processChunk = (chunk, isError = false) => {
+    const text = String(chunk || '');
+    send('terminal:data', { raw:text, agent, source:'chat-runner', isError });
+    if (!spec.json) {
+      plainBuffer += text;
+      send('chat:stream', { agent, text });
+      return;
+    }
+
+    lineBuffer += text;
+    const lines = lineBuffer.split(/\r?\n/);
+    lineBuffer = lines.pop() || '';
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      try {
+        const obj = JSON.parse(trimmed);
+        const extracted = extractJsonText(obj);
+        if (extracted) {
+          finalParts.push(extracted);
+          send('chat:stream', { agent, text:extracted + '\n' });
+        }
+      } catch {
+        if (!/^\s*[\{\[]/.test(trimmed)) {
+          finalParts.push(trimmed);
+          send('chat:stream', { agent, text:trimmed + '\n' });
+        }
+      }
+    }
+  };
+
+  proc.stdout.on('data', d => processChunk(d, false));
+  proc.stderr.on('data', d => processChunk(d, true));
+  proc.on('error', error => {
+    send('chat:complete', { ok:false, agent, error:error.message, text:'' });
+    chatProcess = null;
+  });
+  proc.on('close', code => {
+    if (lineBuffer.trim()) {
+      try {
+        const parsed = JSON.parse(lineBuffer.trim());
+        const extracted = extractJsonText(parsed);
+        if (extracted) finalParts.push(extracted);
+      } catch {
+        if (!spec.json) plainBuffer += lineBuffer;
+      }
+    }
+    const combined = spec.json ? [...new Set(finalParts)].join('\n\n').trim() : plainBuffer.trim();
+    send('chat:complete', { ok:code===0, agent, code, text:combined });
+    chatProcess = null;
+  });
+  return { ok:true };
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1540,
@@ -290,6 +410,12 @@ app.whenReady().then(() => {
     return startTerminal(payload?.agent || currentAgent, currentCwd, payload?.options || {});
   });
 
+  ipcMain.handle('chat:send', (_event, payload) => runChatPrompt(payload?.agent || currentAgent, String(payload?.prompt || ''), payload?.options || {}));
+  ipcMain.handle('chat:stop', () => {
+    if (chatProcess) { try { chatProcess.kill(); } catch {} chatProcess = null; }
+    return true;
+  });
+
   ipcMain.handle('terminal:write', async (_event, text) => {
     if (!terminal) {
       const started = await startTerminal(currentAgent, currentCwd, terminalLaunch?.options || {});
@@ -318,7 +444,7 @@ app.whenReady().then(() => {
   });
 });
 
-app.on('before-quit', stopTerminal);
+app.on('before-quit', () => { stopTerminal(); if (chatProcess) { try { chatProcess.kill(); } catch {} } });
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
