@@ -1,7 +1,7 @@
 {
   "name": "termbridge",
-  "version": "1.2.0",
-  "description": "Professional Windows AI coding workspace with real interactive PTY terminal, automatic CLI boot, runtime capability discovery, and reliable chat transport.",
+  "version": "1.2.1",
+  "description": "Professional Windows AI coding workspace with interactive PTY terminal, automatic engine boot, reliable settings controls, runtime capability discovery, and validated UI interactions.",
   "main": "main.js",
   "author": "MdImranTm",
   "license": "MIT",
@@ -18,7 +18,8 @@
   },
   "devDependencies": {
     "electron": "44.4.3",
-    "electron-builder": "26.15.3"
+    "electron-builder": "26.15.3",
+    "@electron/asar": "3.4.1"
   },
   "build": {
     "appId": "com.termbridge.desktop",
