@@ -12,6 +12,8 @@ let activeId = localStorage.getItem('termbridge.activeId') || sessions[0]?.id ||
 let menuSessionId = null;
 let userPinnedScroll = false;
 let pendingResponse = false;
+let streamingAssistantId = null;
+let streamingText = '';
 let activity = [];
 
 const els = {
@@ -278,3 +280,48 @@ api.onProjectChanged(p=>renderProject(p));
   const s=activeSession();if(s?.agent)state.agent=s.agent;if(s?.options)options={...options,...s.options};
   renderProject(state.project);renderAll();renderSetup();await loadCapabilities(state.agent,false);els.composer.focus();
 })();
+
+api.onChatStatus(({status})=>{
+  if(status==='running'){
+    setStatus('Working…','busy');
+    streamingText='';
+    streamingAssistantId=uid();
+    const s=activeSession();
+    if(s){
+      s.messages.push({id:streamingAssistantId,role:'assistant',text:'',at:Date.now(),streaming:true});
+      saveSessions();
+      renderMessages(false);
+    }
+  }
+});
+
+api.onChatStream(({text})=>{
+  if(!streamingAssistantId)return;
+  streamingText+=String(text||'');
+  const s=activeSession();
+  const m=s?.messages.find(x=>x.id===streamingAssistantId);
+  if(m){
+    m.text=streamingText.trimStart();
+    saveSessions();
+    renderMessages(false);
+  }
+});
+
+api.onChatComplete(({ok,text,error,code})=>{
+  const s=activeSession();
+  let m=s?.messages.find(x=>x.id===streamingAssistantId);
+  const finalText=String(text||streamingText||'').trim();
+  if(m){
+    m.streaming=false;
+    m.text=finalText || (ok?'Completed.':('Command failed'+(error?': '+error:code!=null?' (exit '+code+')':'')));
+  } else if(finalText){
+    addMessage('assistant',finalText,false);
+  }
+  streamingAssistantId=null;
+  streamingText='';
+  pendingResponse=false;
+  saveSessions();
+  renderMessages(false);
+  setStatus(ok?'Ready':'Error',ok?'ok':'error');
+  addActivity(ok?'AI response completed':'AI command failed',AGENT_NAMES[state.agent]||state.agent);
+});
