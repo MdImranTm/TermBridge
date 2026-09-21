@@ -55,24 +55,45 @@ function send(channel, payload) {
 
 function execCapture(file, args = [], opts = {}) {
   return new Promise((resolve) => {
-    execFile(
-      file,
-      args,
-      {
-        windowsHide: true,
-        cwd: opts.cwd || currentCwd || os.homedir(),
-        timeout: opts.timeout || 8000,
-        maxBuffer: opts.maxBuffer || 4 * 1024 * 1024
-      },
-      (error, stdout, stderr) => {
-        resolve({
-          ok: !error,
-          stdout: String(stdout || ''),
-          stderr: String(stderr || ''),
-          code: error?.code ?? 0
-        });
-      }
-    );
+    const proc = crossSpawn(file, args, {
+      cwd: opts.cwd || currentCwd || os.homedir(),
+      windowsHide: true,
+      shell: false,
+      env: { ...process.env, ...(opts.env || {}) }
+    });
+
+    let stdout = '';
+    let stderr = '';
+    let settled = false;
+
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(result);
+    };
+
+    const maxBuffer = opts.maxBuffer || 4 * 1024 * 1024;
+    const append = (current, chunk) => {
+      const next = current + String(chunk || '');
+      return next.length > maxBuffer ? next.slice(-maxBuffer) : next;
+    };
+
+    proc.stdout?.on('data', (chunk) => { stdout = append(stdout, chunk); });
+    proc.stderr?.on('data', (chunk) => { stderr = append(stderr, chunk); });
+
+    proc.on('error', (error) => {
+      finish({ ok: false, stdout, stderr: stderr || error.message, code: error.code || 1 });
+    });
+
+    proc.on('close', (code) => {
+      finish({ ok: code === 0, stdout, stderr, code: code ?? 0 });
+    });
+
+    const timer = setTimeout(() => {
+      try { proc.kill(); } catch {}
+      finish({ ok: false, stdout, stderr: stderr || 'Command timed out.', code: 'ETIMEDOUT' });
+    }, opts.timeout || 8000);
   });
 }
 
@@ -137,58 +158,114 @@ async function detectTools() {
 
 async function discoverCapabilities(agent) {
   const tool = TOOLS[agent];
-  if (!tool) return { models: [], agents: [], commands: [], options: [] };
+  if (!tool) return { models: [], agents: [], commands: [], options: [], meta: {} };
 
   if (tool.kind === 'ai' && !(await commandExists(tool.command))) {
     return {
       models: tool.models || ['Default'],
       agents: tool.agents || ['Default'],
       commands: [],
-      options: []
+      options: [],
+      meta: { installed: false }
     };
   }
 
-  const help = await execCapture(tool.command, ['--help'], { timeout: 9000 });
-  const parsed = parseHelpCapabilities(help.stdout || help.stderr);
+  const rootHelp = await execCapture(tool.command, ['--help'], { timeout: 10000 });
+  const rootParsed = parseHelpCapabilities(rootHelp.stdout || rootHelp.stderr);
+  const commands = [...rootParsed.commands];
+  const options = [...rootParsed.options];
+
+  // Probe discovered subcommands so the UI follows the installed CLI version
+  // instead of relying on a fixed hard-coded settings list.
+  const rootNames = rootParsed.commands
+    .map((item) => item.name)
+    .filter((name) => /^[a-z][\w:-]*$/i.test(name))
+    .slice(0, 24);
+
+  const nestedResults = await Promise.all(
+    rootNames.map(async (name) => {
+      const help = await execCapture(tool.command, [name, '--help'], { timeout: 7000 });
+      return { name, parsed: parseHelpCapabilities(help.stdout || help.stderr) };
+    })
+  );
+
+  for (const entry of nestedResults) {
+    for (const sub of entry.parsed.commands || []) {
+      commands.push({
+        name: entry.name + ' ' + sub.name,
+        description: sub.description || ('Subcommand of ' + entry.name)
+      });
+    }
+    for (const option of entry.parsed.options || []) {
+      options.push({
+        name: entry.name + ' ' + option.name,
+        description: option.description || ''
+      });
+    }
+  }
+
+  const unique = (items) => {
+    const seen = new Set();
+    return items.filter((item) => {
+      const key = item.name;
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  };
+
+  let models = tool.models || ['Default'];
+  let agents = tool.agents || ['Default'];
+  const meta = { installed: true };
 
   if (agent === 'opencode') {
-    const [modelsResult, agentsResult] = await Promise.all([
-      execCapture('opencode', ['models'], { timeout: 15000 }),
-      execCapture('opencode', ['debug', 'agents'], { timeout: 10000 })
+    const [modelsResult, agentsResult, authResult] = await Promise.all([
+      execCapture('opencode', ['models'], { timeout: 20000 }),
+      execCapture('opencode', ['debug', 'agents'], { timeout: 12000 }),
+      execCapture('opencode', ['auth', 'list', '--format', 'json'], { timeout: 10000 })
     ]);
 
-    const models = modelsResult.ok
+    const detectedModels = modelsResult.ok
       ? modelsResult.stdout
           .split(/\r?\n/)
           .map((line) => line.trim())
           .filter(Boolean)
-          .filter((line) => /[a-z0-9][/:_-][a-z0-9]/i.test(line))
-          .slice(0, 200)
+          .filter((line) => /^[^\s]+\/[^^\s]+$/.test(line) || /^[a-z0-9._-]+\/[a-z0-9._:/-]+$/i.test(line))
+          .slice(0, 300)
       : [];
 
-    const agents = agentsResult.ok
+    const detectedAgents = agentsResult.ok
       ? agentsResult.stdout
           .split(/\r?\n/)
           .map((line) => line.trim())
           .filter(Boolean)
           .map((line) => line.split(/\s+/)[0])
-          .filter((line) => /^[\w.-]+$/.test(line))
-          .slice(0, 80)
+          .filter((line) => /^[\w. -]{1,80}$/.test(line))
+          .slice(0, 100)
       : [];
 
-    return {
-      models: ['Default', ...models.filter((x) => x !== 'Default')],
-      agents: ['Default', ...agents.filter((x) => x !== 'Default')],
-      commands: parsed.commands,
-      options: parsed.options
-    };
+    models = ['Default', ...detectedModels.filter((x) => x !== 'Default')];
+    agents = ['Default', ...detectedAgents.filter((x) => x !== 'Default')];
+
+    if (authResult.ok) {
+      try {
+        const parsedAuth = JSON.parse(authResult.stdout || '[]');
+        meta.authenticatedProviders = Array.isArray(parsedAuth) ? parsedAuth.length : undefined;
+      } catch {}
+    }
+  }
+
+  if (agent === 'codex') {
+    const features = await execCapture('codex', ['features', 'list'], { timeout: 10000 });
+    if (features.ok) meta.features = features.stdout.trim().split(/\r?\n/).filter(Boolean).slice(0, 100);
   }
 
   return {
-    models: tool.models || ['Default'],
-    agents: tool.agents || ['Default'],
-    commands: parsed.commands,
-    options: parsed.options
+    models: [...new Set(models)],
+    agents: [...new Set(agents)],
+    commands: unique(commands).slice(0, 180),
+    options: unique(options).slice(0, 260),
+    meta
   };
 }
 
@@ -714,7 +791,7 @@ function buildLaunch(agent, options = {}) {
     shell: 'powershell.exe',
     args: ['-NoLogo', '-NoProfile', '-NoExit'],
     title: TOOLS[agent]?.label || agent,
-    initial: [commandName, ...cliArgs].map(psQuote).join(' ')
+    initial: '& ' + [commandName, ...cliArgs].map(psQuote).join(' ')
   };
 }
 
@@ -785,16 +862,13 @@ async function startTerminal(agent = currentAgent, cwd = currentCwd, options = {
 
 function extractJsonText(obj) {
   const values = [];
-
   const walk = (value, key = '') => {
     if (value == null) return;
     if (typeof value === 'string') {
       if (
-        ['text', 'message', 'content', 'output_text', 'final_output', 'assistant_message'].includes(key) &&
+        ['text', 'message', 'content', 'output_text', 'final_output', 'assistant_message', 'result'].includes(key) &&
         value.trim()
-      ) {
-        values.push(value.trim());
-      }
+      ) values.push(value.trim());
       return;
     }
     if (Array.isArray(value)) {
@@ -805,37 +879,137 @@ function extractJsonText(obj) {
       for (const [k, v] of Object.entries(value)) walk(v, k);
     }
   };
-
   walk(obj);
   return [...new Set(values)].join('\n');
+}
+
+function extractSessionId(value) {
+  if (!value || typeof value !== 'object') return '';
+  return String(
+    value.thread_id ||
+    value.sessionID ||
+    value.session_id ||
+    value.sessionId ||
+    value?.part?.sessionID ||
+    value?.info?.sessionID ||
+    ''
+  ).trim();
+}
+
+function extractOpenCodeExportText(data) {
+  const messages = Array.isArray(data?.messages) ? data.messages : [];
+  const assistants = messages.filter((message) => {
+    const role = message?.info?.role || message?.role;
+    return role === 'assistant';
+  });
+
+  for (let i = assistants.length - 1; i >= 0; i--) {
+    const message = assistants[i];
+    const parts = Array.isArray(message?.parts) ? message.parts : [];
+    const texts = parts
+      .filter((part) => part?.type === 'text' && !part?.synthetic)
+      .map((part) => String(part.text || '').trim())
+      .filter(Boolean);
+    if (texts.length) return texts.join('\n\n');
+  }
+  return '';
+}
+
+function describeStructuredEvent(agent, event) {
+  if (!event || typeof event !== 'object') return '';
+
+  if (agent === 'codex') {
+    if (event.type === 'thread.started') return '[Codex] session ' + (event.thread_id || '') + '\r\n';
+    if (event.type === 'turn.started') return '[Codex] working…\r\n';
+    if (event.type === 'turn.failed') return '[Codex] turn failed: ' + JSON.stringify(event.error || event) + '\r\n';
+
+    const item = event.item;
+    if (item?.type === 'command_execution') {
+      return '[Codex] command: ' + (item.command || '') + (item.status ? ' [' + item.status + ']' : '') + '\r\n';
+    }
+    if (item?.type === 'file_change') {
+      return '[Codex] file change: ' + JSON.stringify(item, null, 2) + '\r\n';
+    }
+    if (item?.type === 'mcp_tool_call') {
+      return '[Codex] MCP: ' + JSON.stringify(item, null, 2) + '\r\n';
+    }
+    return '';
+  }
+
+  if (agent === 'opencode') {
+    if (event.type === 'step_start') return '[OpenCode] step started\r\n';
+    if (event.type === 'tool_use') {
+      const part = event.part || {};
+      const state = part.state || {};
+      const input = state.input || {};
+      const label = part.tool || input.description || input.command || 'tool';
+      return '[OpenCode] tool: ' + label + '\r\n' +
+        (input.command ? '  $ ' + input.command + '\r\n' : '') +
+        (state.output ? String(state.output) + '\r\n' : '');
+    }
+    if (event.type === 'step_finish') {
+      return '[OpenCode] step finished\r\n';
+    }
+    if (event.type === 'error') {
+      return '[OpenCode] error: ' + JSON.stringify(event.error || event) + '\r\n';
+    }
+    return '';
+  }
+
+  return '';
+}
+
+function extractAssistantEventText(agent, event) {
+  if (!event || typeof event !== 'object') return '';
+
+  if (agent === 'codex') {
+    if (event.type === 'item.completed' && event.item?.type === 'agent_message') {
+      return String(event.item.text || '').trim();
+    }
+    return '';
+  }
+
+  if (agent === 'opencode') {
+    if (event.type === 'text' && event.part?.type === 'text' && !event.part?.synthetic) {
+      return String(event.part.text || '').trim();
+    }
+    return '';
+  }
+
+  return '';
 }
 
 function buildChatCommand(agent, prompt, options = {}) {
   const model = options.model && options.model !== 'Default' ? String(options.model) : '';
   const subagent = options.subagent && options.subagent !== 'Default' ? String(options.subagent) : '';
+  const sessionId = String(options.engineSessionId || '').trim();
 
   if (agent === 'codex') {
-    const args = ['exec', '--json'];
+    const args = ['exec'];
     if (model) args.push('--model', model);
     if (options.effort && options.effort !== 'default') {
       args.push('-c', 'model_reasoning_effort="' + options.effort + '"');
     }
+    args.push('--json');
+    if (sessionId) args.push('resume', sessionId);
     args.push(prompt);
-    return { command: 'codex', args, json: true };
+    return { command: 'codex', args, format: 'jsonl' };
   }
 
   if (agent === 'claude') {
-    const args = ['-p', prompt, '--output-format', 'stream-json'];
+    const args = ['-p', prompt, '--output-format', 'json'];
+    if (sessionId) args.push('--resume', sessionId);
     if (model) args.push('--model', model);
-    return { command: 'claude', args, json: true };
+    return { command: 'claude', args, format: 'json' };
   }
 
   if (agent === 'opencode') {
-    const args = ['run'];
+    const args = ['run', '--format', 'json'];
+    if (sessionId) args.push('--session', sessionId);
     if (model) args.push('--model', model);
     if (subagent) args.push('--agent', subagent);
     args.push(prompt);
-    return { command: 'opencode', args, json: false };
+    return { command: 'opencode', args, format: 'jsonl' };
   }
 
   return null;
@@ -847,13 +1021,23 @@ async function runChatPrompt(agent, prompt, options = {}) {
   if (!(await commandExists(spec.command))) return { ok: false, reason: 'not-installed' };
 
   if (chatProcess) {
-    try {
-      chatProcess.kill();
-    } catch {}
+    try { chatProcess.kill(); } catch {}
     chatProcess = null;
   }
 
-  send('chat:status', { status: 'running', agent });
+  send('chat:status', {
+    status: 'running',
+    agent,
+    destination: TOOLS[agent]?.label || agent,
+    cwd: currentCwd || projectRoot || os.homedir()
+  });
+
+  send('terminal:data', {
+    raw: '\r\n[TermBridge] Sending message to ' + (TOOLS[agent]?.label || agent) +
+      ' in ' + (currentCwd || projectRoot || os.homedir()) + '\r\n',
+    agent,
+    source: 'chat-runner'
+  });
 
   const proc = crossSpawn(spec.command, spec.args, {
     cwd: currentCwd || projectRoot || os.homedir(),
@@ -868,53 +1052,67 @@ async function runChatPrompt(agent, prompt, options = {}) {
   });
   chatProcess = proc;
 
+  let stdoutBuffer = '';
+  let stderrBuffer = '';
   let lineBuffer = '';
-  let plainBuffer = '';
-  const finalParts = [];
+  const assistantParts = [];
+  let detectedSessionId = String(options.engineSessionId || '').trim();
+  let completed = false;
 
-  const processChunk = (chunk, isError = false) => {
-    const text = String(chunk || '');
-    send('terminal:data', {
-      raw: text,
-      agent,
-      source: 'chat-runner',
-      isError
-    });
+  const notifySession = (id) => {
+    if (!id || id === detectedSessionId) return;
+    detectedSessionId = id;
+    send('chat:session', { agent, sessionId: id });
+  };
 
-    if (!spec.json) {
-      plainBuffer += text;
-      send('chat:stream', { agent, text });
+  const consumeJsonLine = (line) => {
+    const trimmed = String(line || '').trim();
+    if (!trimmed) return;
+
+    let event;
+    try {
+      event = JSON.parse(trimmed);
+    } catch {
+      send('terminal:data', { raw: trimmed + '\r\n', agent, source: 'chat-runner' });
       return;
     }
 
-    lineBuffer += text;
-    const lines = lineBuffer.split(/\r?\n/);
-    lineBuffer = lines.pop() || '';
+    const sid = extractSessionId(event);
+    if (sid && sid !== detectedSessionId) notifySession(sid);
 
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed) continue;
+    const terminalSummary = describeStructuredEvent(agent, event);
+    if (terminalSummary) {
+      send('terminal:data', { raw: terminalSummary, agent, source: 'chat-runner' });
+    }
 
-      try {
-        const parsed = JSON.parse(trimmed);
-        const extracted = extractJsonText(parsed);
-        if (extracted) {
-          finalParts.push(extracted);
-          send('chat:stream', { agent, text: extracted + '\n' });
-        }
-      } catch {
-        if (!/^\s*[\{\[]/.test(trimmed)) {
-          finalParts.push(trimmed);
-          send('chat:stream', { agent, text: trimmed + '\n' });
-        }
-      }
+    const text = extractAssistantEventText(agent, event);
+    if (text) {
+      assistantParts.push(text);
+      send('chat:stream', { agent, text: text + '\n' });
     }
   };
 
-  proc.stdout.on('data', (data) => processChunk(data, false));
-  proc.stderr.on('data', (data) => processChunk(data, true));
+  proc.stdout.on('data', (chunk) => {
+    const text = String(chunk || '');
+    stdoutBuffer += text;
+
+    if (spec.format === 'jsonl') {
+      lineBuffer += text;
+      const lines = lineBuffer.split(/\r?\n/);
+      lineBuffer = lines.pop() || '';
+      for (const line of lines) consumeJsonLine(line);
+    }
+  });
+
+  proc.stderr.on('data', (chunk) => {
+    const text = String(chunk || '');
+    stderrBuffer += text;
+    send('terminal:data', { raw: text, agent, source: 'chat-runner', isError: true });
+  });
 
   proc.on('error', (error) => {
+    if (completed) return;
+    completed = true;
     send('chat:complete', {
       ok: false,
       agent,
@@ -924,33 +1122,84 @@ async function runChatPrompt(agent, prompt, options = {}) {
     chatProcess = null;
   });
 
-  proc.on('close', (code) => {
-    if (lineBuffer.trim()) {
+  proc.on('close', async (code) => {
+    if (completed) return;
+    completed = true;
+
+    if (spec.format === 'jsonl' && lineBuffer.trim()) {
+      consumeJsonLine(lineBuffer);
+    }
+
+    let finalText = [...new Set(assistantParts)].join('\n\n').trim();
+
+    if (agent === 'claude' && stdoutBuffer.trim()) {
       try {
-        const parsed = JSON.parse(lineBuffer.trim());
-        const extracted = extractJsonText(parsed);
-        if (extracted) finalParts.push(extracted);
+        const parsed = JSON.parse(stdoutBuffer.trim());
+        const sid = extractSessionId(parsed);
+        if (sid && sid !== detectedSessionId) notifySession(sid);
+        finalText = String(parsed.result || extractJsonText(parsed) || '').trim();
       } catch {
-        if (!spec.json) plainBuffer += lineBuffer;
+        finalText = stdoutBuffer.trim();
+      }
+
+      send('terminal:data', {
+        raw: '[Claude Code] response completed\r\n',
+        agent,
+        source: 'chat-runner'
+      });
+    }
+
+    // OpenCode has had versions where a run succeeds and persists the assistant
+    // message but stdout omits the text event. Recover from the session export.
+    if (agent === 'opencode' && !finalText && detectedSessionId) {
+      const exported = await execCapture(
+        'opencode',
+        ['session', 'export', detectedSessionId],
+        { cwd: currentCwd || projectRoot || os.homedir(), timeout: 20000, maxBuffer: 12 * 1024 * 1024 }
+      );
+      if (exported.ok && exported.stdout.trim()) {
+        try {
+          finalText = extractOpenCodeExportText(JSON.parse(exported.stdout.trim())).trim();
+          if (finalText) {
+            send('terminal:data', {
+              raw: '[OpenCode] recovered final reply from session export\r\n',
+              agent,
+              source: 'chat-runner'
+            });
+          }
+        } catch {}
       }
     }
 
-    const combined = spec.json
-      ? [...new Set(finalParts)].join('\n\n').trim()
-      : plainBuffer.trim();
+    if (!finalText && code === 0 && stdoutBuffer.trim() && spec.format !== 'jsonl') {
+      finalText = stdoutBuffer.trim();
+    }
 
+    const errorText = stderrBuffer.trim();
     send('chat:complete', {
-      ok: code === 0,
+      ok: code === 0 && Boolean(finalText),
       agent,
       code,
-      text: combined
+      sessionId: detectedSessionId,
+      error:
+        code !== 0
+          ? (errorText || 'The CLI exited with code ' + code + '.')
+          : (!finalText ? 'The CLI completed but no assistant reply was returned.' : ''),
+      text: finalText
+    });
+
+    send('terminal:data', {
+      raw: '[TermBridge] ' + (finalText ? 'Reply received.' : 'No reply text received.') + '\r\n',
+      agent,
+      source: 'chat-runner'
     });
 
     chatProcess = null;
   });
 
-  return { ok: true };
+  return { ok: true, accepted: true, agent, destination: TOOLS[agent]?.label || agent };
 }
+
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -1090,7 +1339,10 @@ app.whenReady().then(() => {
     )
   );
 
-  ipcMain.handle('chat:provider-send', (_event, payload) => runProviderChat(payload));
+  ipcMain.handle('chat:provider-send', (_event, payload) => {
+    runProviderChat(payload);
+    return { ok: true, accepted: true };
+  });
 
   ipcMain.handle('chat:stop', () => {
     if (chatProcess) {
