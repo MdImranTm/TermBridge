@@ -34,6 +34,10 @@ jobs:
         shell: pwsh
         run: node scripts/smoke-check.js
 
+      - name: Run renderer interaction checks
+        shell: pwsh
+        run: node scripts/renderer-event-check.js
+
       - name: Install dependencies
         shell: pwsh
         run: npm install --no-audit --no-fund
@@ -54,14 +58,26 @@ jobs:
       - name: Verify build outputs
         shell: pwsh
         run: |
-          if (!(Test-Path "release/TermBridge-1.2.0-Portable.exe")) { throw "Portable EXE missing" }
-          if (!(Test-Path "release/TermBridge-1.2.0-Setup.exe")) { throw "Setup EXE missing" }
+          if (!(Test-Path "release/TermBridge-1.2.1-Portable.exe")) { throw "Portable EXE missing" }
+          if (!(Test-Path "release/TermBridge-1.2.1-Setup.exe")) { throw "Setup EXE missing" }
           if (!(Test-Path "release/win-unpacked/TermBridge.exe")) { throw "Direct-open TermBridge.exe missing" }
           Get-ChildItem release | Select-Object Name, Length
 
+      - name: Verify packaged renderer
+        shell: pwsh
+        run: |
+          node -e "const asar=require('@electron/asar'); asar.extractAll('release/win-unpacked/resources/app.asar','release/asar-check')"
+          node --check release/asar-check/renderer/app.js
+          node --check release/asar-check/main.js
+          node --check release/asar-check/preload.js
+          $env:TB_APP_ROOT = (Resolve-Path "release/asar-check").Path
+          node scripts/renderer-event-check.js
+          if (!(Test-Path "release/asar-check/node_modules/@xterm/xterm/lib/xterm.js")) { throw "Packaged xterm runtime missing" }
+          if (!(Test-Path "release/asar-check/node_modules/@xterm/addon-fit/lib/addon-fit.js")) { throw "Packaged xterm fit addon missing" }
+
       - name: Package direct-open app folder
         shell: pwsh
-        run: Compress-Archive -Path release/win-unpacked/* -DestinationPath release/TermBridge-1.2.0-App-Folder.zip -Force
+        run: Compress-Archive -Path release/win-unpacked/* -DestinationPath release/TermBridge-1.2.1-App-Folder.zip -Force
 
       - name: Package full project source
         shell: pwsh
@@ -72,36 +88,36 @@ jobs:
           Get-ChildItem -Force | Where-Object { $exclude -notcontains $_.Name } | ForEach-Object {
             Copy-Item $_.FullName -Destination $stage -Recurse -Force
           }
-          Compress-Archive -Path "$stage/*" -DestinationPath release/TermBridge-1.2.0-Project-Source.zip -Force
+          Compress-Archive -Path "$stage/*" -DestinationPath release/TermBridge-1.2.1-Project-Source.zip -Force
 
       - name: Upload portable app
         uses: actions/upload-artifact@v4
         with:
-          name: TermBridge-v1.2.0-Portable
-          path: release/TermBridge-1.2.0-Portable.exe
+          name: TermBridge-v1.2.1-Portable
+          path: release/TermBridge-1.2.1-Portable.exe
           if-no-files-found: error
           retention-days: 30
 
       - name: Upload direct-open app folder
         uses: actions/upload-artifact@v4
         with:
-          name: TermBridge-v1.2.0-App-Folder
-          path: release/TermBridge-1.2.0-App-Folder.zip
+          name: TermBridge-v1.2.1-App-Folder
+          path: release/TermBridge-1.2.1-App-Folder.zip
           if-no-files-found: error
           retention-days: 30
 
       - name: Upload setup installer
         uses: actions/upload-artifact@v4
         with:
-          name: TermBridge-v1.2.0-Setup
-          path: release/TermBridge-1.2.0-Setup.exe
+          name: TermBridge-v1.2.1-Setup
+          path: release/TermBridge-1.2.1-Setup.exe
           if-no-files-found: error
           retention-days: 30
 
       - name: Upload project source
         uses: actions/upload-artifact@v4
         with:
-          name: TermBridge-v1.2.0-Project-Source
-          path: release/TermBridge-1.2.0-Project-Source.zip
+          name: TermBridge-v1.2.1-Project-Source
+          path: release/TermBridge-1.2.1-Project-Source.zip
           if-no-files-found: error
           retention-days: 30
