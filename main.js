@@ -2,7 +2,8 @@ const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
 const os = require('os');
 const fs = require('fs');
-const { execFile, spawn } = require('child_process');
+const { execFile } = require('child_process');
+const crossSpawn = require('cross-spawn');
 const pty = require('node-pty');
 
 let mainWindow = null;
@@ -192,28 +193,54 @@ function stopTerminal() {
   terminal = null;
 }
 
+function psQuote(value) {
+  return "'" + String(value).replace(/'/g, "''") + "'";
+}
+
 function buildLaunch(agent, options = {}) {
   const model = options.model && options.model !== 'Default' ? String(options.model) : '';
   const subagent = options.subagent && options.subagent !== 'Default' ? String(options.subagent) : '';
+
+  if (agent === 'cmd') {
+    return { shell:'cmd.exe', args:[], title:'CMD', initial:'' };
+  }
+
+  if (agent === 'powershell') {
+    return {
+      shell:'powershell.exe',
+      args:['-NoLogo','-NoProfile','-NoExit'],
+      title:'PowerShell',
+      initial:''
+    };
+  }
+
+  const cliArgs = [];
   if (agent === 'codex') {
-    const args = [];
-    if (model) args.push('--model', model);
-    if (options.effort && options.effort !== 'default') args.push('-c', 'model_reasoning_effort="' + options.effort + '"');
-    return { shell: 'codex', args, title: 'Codex' };
+    if (model) cliArgs.push('--model', model);
+    if (options.effort && options.effort !== 'default') {
+      cliArgs.push('-c', 'model_reasoning_effort="' + options.effort + '"');
+    }
+  } else if (agent === 'claude') {
+    if (model) cliArgs.push('--model', model);
+  } else if (agent === 'opencode') {
+    if (model) cliArgs.push('--model', model);
+    if (subagent) cliArgs.push('--agent', subagent);
   }
-  if (agent === 'claude') {
-    const args = [];
-    if (model) args.push('--model', model);
-    return { shell: 'claude', args, title: 'Claude Code' };
-  }
-  if (agent === 'opencode') {
-    const args = [];
-    if (model) args.push('--model', model);
-    if (subagent) args.push('--agent', subagent);
-    return { shell: 'opencode', args, title: 'OpenCode' };
-  }
-  if (agent === 'cmd') return { shell: 'cmd.exe', args: [], title: 'CMD' };
-  return { shell: 'powershell.exe', args: ['-NoLogo', '-NoProfile', '-NoExit'], title: 'PowerShell' };
+
+  const commandName =
+    agent === 'codex' ? 'codex' :
+    agent === 'claude' ? 'claude' :
+    agent === 'opencode' ? 'opencode' :
+    'powershell';
+
+  const initial = [commandName, ...cliArgs].map(psQuote).join(' ');
+
+  return {
+    shell:'powershell.exe',
+    args:['-NoLogo','-NoProfile','-NoExit'],
+    title:TOOLS[agent]?.label || agent,
+    initial
+  };
 }
 
 async function startTerminal(agent = currentAgent, cwd = currentCwd, options = {}) {
@@ -244,6 +271,12 @@ async function startTerminal(agent = currentAgent, cwd = currentCwd, options = {
   }
 
   terminal.onData(raw => send('terminal:data', { raw, agent: currentAgent }));
+
+  if (launch.initial) {
+    setTimeout(() => {
+      if (terminal) terminal.write(launch.initial + '\r');
+    }, 250);
+  }
   terminal.onExit(({ exitCode, signal }) => {
     send('terminal:exit', { exitCode, signal, agent: currentAgent });
     terminal = null;
@@ -306,7 +339,7 @@ async function runChatPrompt(agent, prompt, options = {}) {
   }
 
   send('chat:status', { status:'running', agent });
-  const proc = spawn(spec.command, spec.args, {
+  const proc = crossSpawn(spec.command, spec.args, {
     cwd: currentCwd,
     windowsHide: true,
     shell: false,
