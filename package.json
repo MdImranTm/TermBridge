@@ -1,7 +1,7 @@
 {
   "name": "termbridge",
-  "version": "0.3.2",
-  "description": "Professional desktop workspace for Codex, Claude Code, OpenCode and local terminals.",
+  "version": "1.0.0",
+  "description": "Professional Windows workspace for Codex, Claude Code, OpenCode, local terminals, and custom AI APIs.",
   "main": "main.js",
   "author": "MdImranTm",
   "license": "MIT",
@@ -28,6 +28,7 @@
       "main.js",
       "preload.js",
       "renderer/**/*",
+      "assets/**/*",
       "package.json"
     ],
     "asarUnpack": [
@@ -47,7 +48,8 @@
             "x64"
           ]
         }
-      ]
+      ],
+      "icon": "assets/icon.png"
     },
     "nsis": {
       "oneClick": true,
