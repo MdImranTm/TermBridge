@@ -230,7 +230,7 @@ async function discoverCapabilities(agent) {
           .split(/\r?\n/)
           .map((line) => line.trim())
           .filter(Boolean)
-          .filter((line) => /^[^\s]+\/[^^\s]+$/.test(line) || /^[a-z0-9._-]+\/[a-z0-9._:/-]+$/i.test(line))
+          .filter((line) => /^[^\s]+\/[^\s]+$/.test(line) || /^[a-z0-9._-]+\/[a-z0-9._:/-]+$/i.test(line))
           .slice(0, 300)
       : [];
 
@@ -848,6 +848,8 @@ async function startTerminal(agent = currentAgent, cwd = currentCwd, options = {
   }
 
   let readySent = false;
+  let initialSent = !launch.initial;
+
   const markReady = () => {
     if (readySent || terminal !== instance) return;
     readySent = true;
@@ -861,7 +863,10 @@ async function startTerminal(agent = currentAgent, cwd = currentCwd, options = {
 
   instance.onData((raw) => {
     send('terminal:data', { raw, agent: selectedAgent, source: 'terminal' });
-    markReady();
+
+    // For AI CLIs, ignore the wrapper PowerShell prompt and only mark ready
+    // after the actual CLI command has been sent.
+    if (initialSent) markReady();
   });
 
   instance.onExit(({ exitCode, signal }) => {
@@ -871,13 +876,15 @@ async function startTerminal(agent = currentAgent, cwd = currentCwd, options = {
 
   if (launch.initial) {
     setTimeout(() => {
-      if (terminal === instance) instance.write(launch.initial + '\r');
+      if (terminal === instance) {
+        initialSent = true;
+        instance.write(launch.initial + '\r');
+      }
     }, 220);
   }
 
-  // Some CLIs wait silently for input/auth. Mark the PTY ready once the
-  // process has had time to boot even if it has not emitted output yet.
-  setTimeout(markReady, 900);
+  // Some CLIs may wait silently for authentication/input.
+  setTimeout(markReady, launch.initial ? 2200 : 700);
 
   return { ok: true, agent: selectedAgent, cwd: selectedCwd, launch, status: 'starting' };
 }
