@@ -573,9 +573,19 @@ function addMessage(role, text, forceBottom = false, delivery = '') {
 
 function renderToolTabs() {
   els.toolTabs.innerHTML = '';
+  els.engineSelect.innerHTML = '';
 
-  for (const id of ['powershell', 'cmd', 'codex', 'claude', 'opencode']) {
+  const engineIds = ['powershell', 'cmd', 'codex', 'claude', 'opencode'];
+  for (const id of engineIds) {
     const tool = state.tools[id] || { installed: id === 'powershell' || id === 'cmd' };
+
+    const option = document.createElement('option');
+    option.value = id;
+    option.textContent =
+      TOOL_NAMES[id] +
+      (CLI_AI_TOOLS.includes(id) && !tool.installed ? ' · Not installed' : '');
+    els.engineSelect.appendChild(option);
+
     const button = document.createElement('button');
     button.className =
       'tool-tab ' +
@@ -586,6 +596,13 @@ function renderToolTabs() {
     button.addEventListener('click', () => setEngine(id));
     els.toolTabs.appendChild(button);
   }
+
+  const providerOption = document.createElement('option');
+  providerOption.value = 'provider';
+  providerOption.textContent = state.providers.length
+    ? 'Custom API'
+    : 'Custom API · Not configured';
+  els.engineSelect.appendChild(providerOption);
 
   const providerButton = document.createElement('button');
   providerButton.className =
@@ -598,6 +615,8 @@ function renderToolTabs() {
     : 'No custom providers configured';
   providerButton.addEventListener('click', () => setEngine('provider'));
   els.toolTabs.appendChild(providerButton);
+
+  els.engineSelect.value = state.agent;
 
   const tool = state.tools[state.agent];
   const missing = CLI_AI_TOOLS.includes(state.agent) && tool && !tool.installed;
@@ -740,8 +759,12 @@ async function loadEngineCapabilities(applyAfter = false) {
 }
 
 async function setEngine(agent) {
+  const token = ++engineSwitchToken;
+
   if (agent === 'provider' && !state.providers.length) {
+    setEngineBootState('missing', 'Setup');
     openSettings('providers');
+    renderToolTabs();
     return;
   }
 
@@ -757,38 +780,69 @@ async function setEngine(agent) {
     saveSessions();
   }
 
-  await loadEngineCapabilities(false);
   renderToolTabs();
+  renderChatHeader();
 
-  if (CLI_AI_TOOLS.includes(agent)) {
-    const tool = state.tools[agent];
-    if (tool && !tool.installed) {
-      setStatus('Not installed', 'error');
-      openSettings('clis');
-      return;
-    }
+  const tool = state.tools[agent];
+  if (CLI_AI_TOOLS.includes(agent) && tool && !tool.installed) {
+    setStatus(TOOL_NAMES[agent] + ' not installed', 'error');
+    setEngineBootState('missing', 'Missing');
+    setTerminalState('missing', 'Setup');
+    openSettings('clis');
+    return;
+  }
 
-    switchRightView('terminal');
-    setStatus('Opening ' + engineDisplayName() + '…', 'busy');
-    const result = await api.startAgent(agent, options);
-
-    if (result?.ok) {
-      setStatus(engineDisplayName() + ' ready', 'ok');
-      addActivity('Interactive CLI auto-opened', engineDisplayName());
-    } else {
-      setStatus('CLI launch failed', 'error');
-      addActivity('CLI launch failed', engineDisplayName());
-    }
-  } else if (agent === 'provider') {
+  if (agent === 'provider') {
+    setStatus('Loading API provider…', 'busy');
+    setEngineBootState('starting', 'Loading');
+    await loadEngineCapabilities(false);
+    if (token !== engineSwitchToken) return;
     setStatus('API ready', 'ok');
-  } else {
-    switchRightView('terminal');
-    setStatus('Starting terminal…', 'busy');
-    const result = await api.startAgent(agent, {});
-    setStatus(result?.ok ? 'Ready' : 'Terminal error', result?.ok ? 'ok' : 'error');
+    setEngineBootState('ready', 'Ready');
+    setTerminalState('ready', 'API');
+    els.terminalTitle.textContent = 'Interactive terminal';
+    els.terminalSubtitle.textContent = 'Select a local CLI to use the PTY terminal';
+    addActivity('Engine selected', engineDisplayName());
+    return;
+  }
+
+  switchRightView('terminal');
+  resetTerminalView();
+  fitTerminalSoon();
+
+  setStatus('Starting ' + engineDisplayName() + '…', 'busy');
+  setEngineBootState('starting', 'Starting');
+  setTerminalState('waiting', 'Waiting');
+  els.terminalTitle.textContent = engineDisplayName();
+  els.terminalSubtitle.textContent = 'Starting real PTY in ' + (state.project?.path || state.cwd || 'local workspace');
+
+  const result = await api.startAgent(agent, options);
+  if (token !== engineSwitchToken) return;
+
+  if (!result?.ok) {
+    setStatus('Failed to start ' + engineDisplayName(), 'error');
+    setEngineBootState(result?.reason === 'not-installed' ? 'missing' : 'error', result?.reason === 'not-installed' ? 'Missing' : 'Error');
+    setTerminalState(result?.reason === 'not-installed' ? 'missing' : 'error', result?.reason === 'not-installed' ? 'Setup' : 'Error');
+    addActivity('Engine start failed', engineDisplayName());
+    if (result?.reason === 'not-installed') openSettings('clis');
+    return;
   }
 
   addActivity('Engine selected', engineDisplayName());
+
+  // Do not block engine selection on potentially slow CLI capability probes.
+  // The real PTY is already running while models/agents/options load in background.
+  loadEngineCapabilities(false)
+    .then(() => {
+      if (token !== engineSwitchToken) return;
+      renderCapabilities();
+      renderChatHeader();
+      addActivity('Runtime options detected', engineDisplayName());
+    })
+    .catch((error) => {
+      if (token !== engineSwitchToken) return;
+      addActivity('Option detection warning', error?.message || 'Could not read all runtime options');
+    });
 }
 
 function selectedModel() {
@@ -1354,28 +1408,18 @@ function renderPalette(query = '') {
   }
 }
 
-function cleanTerminalRaw(raw) {
-  return String(raw || '')
-    .replace(/\x1b\][^\x07]*(?:\x07|\x1b\\)/g, '')
-    .replace(/\x1b\[[0-?]*[ -\/]*[@-~]/g, '')
-    .replace(/\x1b[=>]/g, '')
-    .replace(/\r(?!\n)/g, '\n')
-    .replace(/[\u0000\u0008]/g, '');
-}
-
 function appendTerminal(raw) {
-  const nearBottom =
-    els.terminalOutput.scrollHeight -
-      (els.terminalOutput.scrollTop + els.terminalOutput.clientHeight) <
-    70;
+  const text = String(raw || '');
+  terminalText += text;
+  if (terminalText.length > 300000) terminalText = terminalText.slice(-220000);
 
-  terminalText += cleanTerminalRaw(raw);
-  if (terminalText.length > 240000) terminalText = terminalText.slice(-180000);
+  if (terminalUI) {
+    terminalUI.write(text);
+    return;
+  }
+
   els.terminalOutput.textContent = terminalText;
-
-  requestAnimationFrame(() => {
-    if (nearBottom) els.terminalOutput.scrollTop = els.terminalOutput.scrollHeight;
-  });
+  els.terminalOutput.scrollTop = els.terminalOutput.scrollHeight;
 }
 
 function renderActivity() {
@@ -1404,13 +1448,20 @@ function renderActivity() {
 }
 
 function switchRightView(view) {
-  $$('.right-tab').forEach((button) => {
+  $('.right-tab').forEach((button) => {
     button.classList.toggle('active', button.dataset.view === view);
   });
 
-  $$('.right-view').forEach((panel) => {
+  $('.right-view').forEach((panel) => {
     panel.classList.toggle('active', panel.id === view + 'View');
   });
+
+  if (view === 'terminal') {
+    fitTerminalSoon();
+    setTimeout(() => {
+      try { terminalUI?.focus(); } catch {}
+    }, 20);
+  }
 }
 
 function renderAll(forceBottom = false) {
