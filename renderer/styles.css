@@ -147,6 +147,7 @@ input,select,textarea{outline:none}
 .message-head{display:flex;align-items:center;gap:7px;margin-bottom:5px}
 .message-head strong{font-size:9.3px}
 .message-head span{color:var(--muted2);font-size:7.3px}
+.message-head .message-delivery{margin-left:auto;color:#8793a4;font-size:7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:48%}
 .message-text{color:#435064;font-size:10.4px;line-height:1.68;white-space:pre-wrap;word-break:break-word}
 .message.user .message-text{color:#171d26}
 .jump-bottom{position:absolute;right:22px;bottom:87px;border:1px solid #dbe1ed;border-radius:999px;background:#fff;color:#596679;padding:6px 9px;font-size:7.7px;box-shadow:var(--shadow)}
