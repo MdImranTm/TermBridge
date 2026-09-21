@@ -61,6 +61,12 @@ contextBridge.exposeInMainWorld('termbridge', {
     return () => ipcRenderer.removeListener('chat:session', handler);
   },
 
+  onEngineSync: (callback) => {
+    const handler = (_event, payload) => callback(payload);
+    ipcRenderer.on('engine:sync', handler);
+    return () => ipcRenderer.removeListener('engine:sync', handler);
+  },
+
   onData: (callback) => {
     const handler = (_event, payload) => callback(payload);
     ipcRenderer.on('terminal:data', handler);
