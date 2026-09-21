@@ -50,14 +50,34 @@ jobs:
         shell: pwsh
         run: Get-ChildItem release | Select-Object Name, Length
 
-      - name: Upload complete Windows package
+      - name: Upload portable app
         uses: actions/upload-artifact@v4
         with:
-          name: TermBridge-Windows-v0.3.0
-          path: |
-            release/TermBridge-0.3.0-Setup.exe
-            release/TermBridge-0.3.0-Portable.exe
-            release/TermBridge-0.3.0-App-Folder.zip
-            release/TermBridge-Project-Source.zip
+          name: TermBridge-v0.3.0-Portable
+          path: release/TermBridge-0.3.0-Portable.exe
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload direct-open app folder
+        uses: actions/upload-artifact@v4
+        with:
+          name: TermBridge-v0.3.0-App-Folder
+          path: release/TermBridge-0.3.0-App-Folder.zip
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload project source
+        uses: actions/upload-artifact@v4
+        with:
+          name: TermBridge-v0.3.0-Project-Source
+          path: release/TermBridge-Project-Source.zip
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload setup installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: TermBridge-v0.3.0-Setup
+          path: release/TermBridge-0.3.0-Setup.exe
           if-no-files-found: error
           retention-days: 30
