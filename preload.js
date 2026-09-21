@@ -55,6 +55,12 @@ contextBridge.exposeInMainWorld('termbridge', {
     return () => ipcRenderer.removeListener('chat:status', handler);
   },
 
+  onChatSession: (callback) => {
+    const handler = (_event, payload) => callback(payload);
+    ipcRenderer.on('chat:session', handler);
+    return () => ipcRenderer.removeListener('chat:session', handler);
+  },
+
   onData: (callback) => {
     const handler = (_event, payload) => callback(payload);
     ipcRenderer.on('terminal:data', handler);
