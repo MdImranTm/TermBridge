@@ -14,7 +14,8 @@ if (duplicates.length) {
 const requiredIds = [
   'newChat','sessionList','projectBtn','projectName','toolTabs',
   'modelSelect','agentSelect','effortSelect','messages','composer',
-  'sendBtn','terminalOutput','terminalState','engineSelect','engineBootState',
+  'sendBtn','terminalOutput','terminalState','engineSelect','engineBootState','mainGrid',
+  'terminalZoomOut','terminalZoomReset','terminalZoomIn','terminalExpand',
   'setupList','providerList','providerForm','paletteModal','capabilitiesList'
 ];
 
@@ -39,7 +40,7 @@ for (const handler of requiredMainHandlers) {
 const requiredPreloadMethods = [
   'getState','detectTools','getCapabilities','installTool','pickFolder',
   'startAgent','sendChat','sendProviderChat','listProviders','saveProvider',
-  'deleteProvider','testProvider','providerModels','onChatSession'
+  'deleteProvider','testProvider','providerModels','onChatSession','onEngineSync'
 ];
 
 for (const method of requiredPreloadMethods) {
@@ -126,6 +127,31 @@ if (!main.includes("status: 'starting'") || !main.includes("status: 'ready'")) {
 
 if (!main.includes("initialSent = true")) {
   throw new Error('CLI boot readiness must wait until the actual AI command is launched.');
+}
+
+
+if (!main.includes('ensureOpenCodeService') || !main.includes('ensureOpenCodeSession')) {
+  throw new Error('Shared OpenCode service/session architecture is missing.');
+}
+
+if (!main.includes("'/session/' + encodeURIComponent(sessionId) + '/message'")) {
+  throw new Error('OpenCode shared-session message API is missing.');
+}
+
+if (!main.includes("'attach'") || !main.includes('opencodeAttachUrl')) {
+  throw new Error('OpenCode TUI attach flow is missing.');
+}
+
+if (!main.includes("send('engine:sync'")) {
+  throw new Error('Engine state synchronization event is missing.');
+}
+
+if (!app.includes('api.onEngineSync')) {
+  throw new Error('Renderer engine synchronization listener is missing.');
+}
+
+if (!app.includes('applyTerminalZoom') || !app.includes('applyTerminalExpanded')) {
+  throw new Error('Terminal zoom/expand controls are missing.');
 }
 
 console.log('Static smoke checks passed.');
