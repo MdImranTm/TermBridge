@@ -1,4 +1,4 @@
-name: Build Windows App
+name: Build TermBridge Windows
 
 on:
   push:
@@ -11,7 +11,8 @@ permissions:
 jobs:
   build:
     runs-on: windows-latest
-    timeout-minutes: 35
+    timeout-minutes: 40
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -21,12 +22,24 @@ jobs:
         with:
           node-version: '22'
 
+      - name: Restore original app logo
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path assets | Out-Null
+          $b64 = Get-Content assets/icon.png.b64 -Raw
+          [IO.File]::WriteAllBytes("assets/icon.png", [Convert]::FromBase64String($b64))
+
       - name: Validate JavaScript syntax
         shell: pwsh
         run: |
           node --check main.js
           node --check preload.js
           node --check renderer/app.js
+          node --check scripts/smoke-check.js
+
+      - name: Run static smoke checks
+        shell: pwsh
+        run: node scripts/smoke-check.js
 
       - name: Install dependencies
         shell: pwsh
@@ -38,9 +51,17 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
         run: npm run dist:win
 
+      - name: Verify build outputs
+        shell: pwsh
+        run: |
+          if (!(Test-Path "release/TermBridge-1.0.0-Portable.exe")) { throw "Portable EXE missing" }
+          if (!(Test-Path "release/TermBridge-1.0.0-Setup.exe")) { throw "Setup EXE missing" }
+          if (!(Test-Path "release/win-unpacked/TermBridge.exe")) { throw "Direct-open TermBridge.exe missing" }
+          Get-ChildItem release | Select-Object Name, Length
+
       - name: Package direct-open app folder
         shell: pwsh
-        run: Compress-Archive -Path release/win-unpacked/* -DestinationPath release/TermBridge-0.3.2-App-Folder.zip -Force
+        run: Compress-Archive -Path release/win-unpacked/* -DestinationPath release/TermBridge-1.0.0-App-Folder.zip -Force
 
       - name: Package full project source
         shell: pwsh
@@ -51,40 +72,36 @@ jobs:
           Get-ChildItem -Force | Where-Object { $exclude -notcontains $_.Name } | ForEach-Object {
             Copy-Item $_.FullName -Destination $stage -Recurse -Force
           }
-          Compress-Archive -Path "$stage/*" -DestinationPath release/TermBridge-Project-Source.zip -Force
-
-      - name: Show output
-        shell: pwsh
-        run: Get-ChildItem release | Select-Object Name, Length
+          Compress-Archive -Path "$stage/*" -DestinationPath release/TermBridge-1.0.0-Project-Source.zip -Force
 
       - name: Upload portable app
         uses: actions/upload-artifact@v4
         with:
-          name: TermBridge-v0.3.2-Portable
-          path: release/TermBridge-0.3.2-Portable.exe
+          name: TermBridge-v1.0.0-Portable
+          path: release/TermBridge-1.0.0-Portable.exe
           if-no-files-found: error
           retention-days: 30
 
       - name: Upload direct-open app folder
         uses: actions/upload-artifact@v4
         with:
-          name: TermBridge-v0.3.2-App-Folder
-          path: release/TermBridge-0.3.2-App-Folder.zip
-          if-no-files-found: error
-          retention-days: 30
-
-      - name: Upload project source
-        uses: actions/upload-artifact@v4
-        with:
-          name: TermBridge-v0.3.2-Project-Source
-          path: release/TermBridge-Project-Source.zip
+          name: TermBridge-v1.0.0-App-Folder
+          path: release/TermBridge-1.0.0-App-Folder.zip
           if-no-files-found: error
           retention-days: 30
 
       - name: Upload setup installer
         uses: actions/upload-artifact@v4
         with:
-          name: TermBridge-v0.3.2-Setup
-          path: release/TermBridge-0.3.2-Setup.exe
+          name: TermBridge-v1.0.0-Setup
+          path: release/TermBridge-1.0.0-Setup.exe
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload project source
+        uses: actions/upload-artifact@v4
+        with:
+          name: TermBridge-v1.0.0-Project-Source
+          path: release/TermBridge-1.0.0-Project-Source.zip
           if-no-files-found: error
           retention-days: 30
