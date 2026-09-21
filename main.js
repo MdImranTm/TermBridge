@@ -511,7 +511,7 @@ async function discoverCapabilities(agent) {
   if (agent === 'opencode') {
     const [modelsResult, agentsResult, authResult] = await Promise.all([
       execCapture('opencode', ['models'], { timeout: 20000 }),
-      execCapture('opencode', ['debug', 'agents'], { timeout: 12000 }),
+      execCapture('opencode', ['agent', 'list'], { timeout: 12000 }),
       execCapture('opencode', ['auth', 'list', '--format', 'json'], { timeout: 10000 })
     ]);
 
@@ -520,22 +520,51 @@ async function discoverCapabilities(agent) {
           .split(/\r?\n/)
           .map((line) => line.trim())
           .filter(Boolean)
-          .filter((line) => /^[^\s]+\/[^\s]+$/.test(line) || /^[a-z0-9._-]+\/[a-z0-9._:/-]+$/i.test(line))
+          .filter((line) => /^[^\s]+\/[^\s]+$/.test(line))
           .slice(0, 300)
       : [];
 
-    const detectedAgents = agentsResult.ok
+    let detectedAgents = agentsResult.ok
       ? agentsResult.stdout
           .split(/\r?\n/)
           .map((line) => line.trim())
           .filter(Boolean)
-          .map((line) => line.split(/\s+/)[0])
-          .filter((line) => /^[\w. -]{1,80}$/.test(line))
+          .map((line) => line.split(/\s{2,}|\t/)[0].trim())
+          .filter((line) => /^[\w.-][\w. -]{0,79}$/.test(line))
           .slice(0, 100)
       : [];
 
+    const liveCommands = [];
+    if (opencodeService?.url && await openCodeHealth(opencodeService.url)) {
+      try {
+        const [serverAgents, serverCommands] = await Promise.all([
+          fetchJson(opencodeService.url + '/agent', { method: 'GET' }, 7000),
+          fetchJson(opencodeService.url + '/command', { method: 'GET' }, 7000)
+        ]);
+
+        if (Array.isArray(serverAgents)) {
+          const names = serverAgents
+            .map((item) => String(item?.name || item?.id || '').trim())
+            .filter(Boolean);
+          if (names.length) detectedAgents = names;
+        }
+
+        if (Array.isArray(serverCommands)) {
+          for (const item of serverCommands) {
+            const rawName = String(item?.name || item?.command || '').trim();
+            if (!rawName) continue;
+            liveCommands.push({
+              name: rawName.startsWith('/') ? rawName : '/' + rawName,
+              description: String(item?.description || item?.title || 'OpenCode command')
+            });
+          }
+        }
+      } catch {}
+    }
+
     models = ['Default', ...detectedModels.filter((x) => x !== 'Default')];
     agents = ['Default', ...detectedAgents.filter((x) => x !== 'Default')];
+    commands.push(...liveCommands);
 
     if (authResult.ok) {
       try {
@@ -543,6 +572,9 @@ async function discoverCapabilities(agent) {
         meta.authenticatedProviders = Array.isArray(parsedAuth) ? parsedAuth.length : undefined;
       } catch {}
     }
+
+    meta.sharedSession = Boolean(opencodeService?.url);
+    meta.sessionId = opencodeActiveSessionId || '';
   }
 
   if (agent === 'codex') {
