@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:;">
+  <title>TermBridge</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="logo">T</div>
+        <div>
+          <strong>TermBridge</strong>
+          <span>AI Terminal Workspace</span>
+        </div>
+      </div>
+
+      <button id="newChat" class="primary-btn">＋ New chat</button>
+
+      <div class="sidebar-label">SESSIONS</div>
+      <div id="sessionList" class="session-list"></div>
+
+      <div class="sidebar-foot">
+        <div class="security-dot"></div>
+        <div>
+          <strong>Local bridge</strong>
+          <span>Runs on your PC</span>
+        </div>
+      </div>
+    </aside>
+
+    <main class="workspace">
+      <header class="topbar">
+        <div class="project-area">
+          <button id="projectBtn" class="project-btn">
+            <span class="folder-icon">▰</span>
+            <span>
+              <small>PROJECT</small>
+              <b id="projectName">Home folder</b>
+            </span>
+          </button>
+        </div>
+
+        <div class="agent-tabs">
+          <button class="agent active" data-agent="powershell">PowerShell</button>
+          <button class="agent" data-agent="cmd">CMD</button>
+          <button class="agent" data-agent="codex">Codex</button>
+          <button class="agent" data-agent="claude">Claude</button>
+        </div>
+
+        <div class="status-wrap">
+          <span id="statusDot" class="status-dot"></span>
+          <span id="statusText">Ready</span>
+          <button id="restartBtn" class="icon-btn" title="Restart terminal">↻</button>
+        </div>
+      </header>
+
+      <section class="content">
+        <section class="chat-panel">
+          <div id="welcome" class="welcome">
+            <div class="welcome-icon">⌁</div>
+            <h1>Your terminal, with a chat interface.</h1>
+            <p>Choose Codex, Claude, PowerShell or CMD. Messages you send here are typed into the same local terminal session and the response streams back into this workspace.</p>
+            <div class="quick-grid">
+              <button class="quick" data-prompt="Check this project and tell me what it does.">Analyze project</button>
+              <button class="quick" data-prompt="Find the main errors in this project and explain them.">Find issues</button>
+              <button class="quick" data-prompt="Run the project tests and report the result.">Run tests</button>
+            </div>
+          </div>
+
+          <div id="messages" class="messages"></div>
+
+          <div class="composer-wrap">
+            <div class="composer">
+              <textarea id="composer" rows="1" placeholder="Message the active terminal…"></textarea>
+              <button id="sendBtn" class="send-btn" title="Send">➤</button>
+            </div>
+            <div class="composer-meta">
+              <span>Enter to send · Shift+Enter for a new line</span>
+              <span id="activeAgentLabel">PowerShell session</span>
+            </div>
+          </div>
+        </section>
+
+        <aside class="terminal-panel">
+          <div class="terminal-head">
+            <div>
+              <strong>Raw terminal</strong>
+              <span>Live PTY output</span>
+            </div>
+            <button id="clearTerminal" class="ghost-btn">Clear</button>
+          </div>
+          <pre id="terminalOutput" class="terminal-output"></pre>
+          <div class="terminal-note">
+            <span>●</span>
+            Interactive programs remain attached to this session.
+          </div>
+        </aside>
+      </section>
+    </main>
+  </div>
+  <script src="./app.js"></script>
+</body>
+</html>
