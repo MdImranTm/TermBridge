@@ -5,6 +5,7 @@ const fs = require('fs');
 const { execFile } = require('child_process');
 const crossSpawn = require('cross-spawn');
 const pty = require('node-pty');
+const net = require('net');
 
 let mainWindow = null;
 let terminal = null;
@@ -14,6 +15,11 @@ let projectRoot = null;
 let currentCwd = os.homedir();
 let currentAgent = 'powershell';
 let terminalLaunch = null;
+let opencodeService = null;
+let opencodeController = null;
+let opencodeActiveSessionId = '';
+let opencodeSyncTimer = null;
+let opencodeLastSyncKey = '';
 
 const TOOLS = {
   powershell: { label: 'PowerShell', command: 'powershell.exe', kind: 'shell' },
@@ -103,6 +109,290 @@ async function commandExists(command) {
     timeout: 5000
   });
   return result.ok && result.stdout.trim().length > 0;
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function getFreePort() {
+  return new Promise((resolve, reject) => {
+    const server = net.createServer();
+    server.unref();
+    server.on('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address();
+      const port = address && typeof address === 'object' ? address.port : 0;
+      server.close((error) => error ? reject(error) : resolve(port));
+    });
+  });
+}
+
+function stopOpenCodeSync() {
+  if (opencodeSyncTimer) clearInterval(opencodeSyncTimer);
+  opencodeSyncTimer = null;
+  opencodeLastSyncKey = '';
+}
+
+function stopOpenCodeService() {
+  stopOpenCodeSync();
+  if (opencodeService?.process) {
+    try { opencodeService.process.kill(); } catch {}
+  }
+  opencodeService = null;
+  opencodeActiveSessionId = '';
+}
+
+async function openCodeHealth(url) {
+  try {
+    const response = await fetch(url + '/global/health');
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+async function ensureOpenCodeService(cwd) {
+  const targetCwd = cwd || projectRoot || currentCwd || os.homedir();
+
+  if (
+    opencodeService?.url &&
+    opencodeService.cwd === targetCwd &&
+    await openCodeHealth(opencodeService.url)
+  ) {
+    return opencodeService;
+  }
+
+  stopOpenCodeService();
+
+  const port = await getFreePort();
+  const url = 'http://127.0.0.1:' + port;
+  const proc = crossSpawn(
+    'opencode',
+    ['serve', '--hostname', '127.0.0.1', '--port', String(port)],
+    {
+      cwd: targetCwd,
+      windowsHide: true,
+      shell: false,
+      env: { ...process.env, NO_COLOR: '1', FORCE_COLOR: '0' }
+    }
+  );
+
+  opencodeService = { process: proc, url, port, cwd: targetCwd };
+
+  proc.stderr?.on('data', (chunk) => {
+    const text = String(chunk || '');
+    if (/error|failed|fatal/i.test(text)) {
+      send('terminal:data', {
+        raw: '\r\n[OpenCode service] ' + text,
+        agent: 'opencode',
+        source: 'service',
+        isError: true
+      });
+    }
+  });
+
+  proc.on('exit', () => {
+    if (opencodeService?.process === proc) {
+      opencodeService = null;
+      opencodeActiveSessionId = '';
+      stopOpenCodeSync();
+    }
+  });
+
+  const deadline = Date.now() + 15000;
+  while (Date.now() < deadline) {
+    if (await openCodeHealth(url)) return opencodeService;
+    await sleep(250);
+  }
+
+  try { proc.kill(); } catch {}
+  opencodeService = null;
+  throw new Error('OpenCode local service did not become ready.');
+}
+
+async function ensureOpenCodeSession(cwd, requestedSessionId = '') {
+  const service = await ensureOpenCodeService(cwd);
+  const wanted = String(requestedSessionId || '').trim();
+
+  if (wanted) {
+    try {
+      const session = await fetchJson(
+        service.url + '/session/' + encodeURIComponent(wanted),
+        { method: 'GET' },
+        8000
+      );
+      if (session?.id) {
+        opencodeActiveSessionId = session.id;
+        return { service, sessionId: session.id };
+      }
+    } catch {}
+  }
+
+  const created = await fetchJson(
+    service.url + '/session',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: 'TermBridge' })
+    },
+    10000
+  );
+
+  const sessionId = String(created?.id || created?.sessionID || '').trim();
+  if (!sessionId) throw new Error('OpenCode did not return a session ID.');
+
+  opencodeActiveSessionId = sessionId;
+  return { service, sessionId };
+}
+
+function openCodeModelObject(model) {
+  const value = String(model || '').trim();
+  if (!value || value === 'Default' || !value.includes('/')) return undefined;
+  const slash = value.indexOf('/');
+  return {
+    providerID: value.slice(0, slash),
+    modelID: value.slice(slash + 1)
+  };
+}
+
+function extractOpenCodeMessageText(message) {
+  const parts = Array.isArray(message?.parts) ? message.parts : [];
+  return parts
+    .filter((part) => part?.type === 'text' && !part?.synthetic)
+    .map((part) => String(part.text || '').trim())
+    .filter(Boolean)
+    .join('\n\n');
+}
+
+function syncOpenCodeMessageState(sessionId, message) {
+  const info = message?.info || {};
+  const providerID = String(info.providerID || info.provider?.id || '').trim();
+  const modelID = String(info.modelID || info.model?.id || '').trim();
+  const model = providerID && modelID ? providerID + '/' + modelID : '';
+  const subagent = String(info.agent || info.agentName || '').trim();
+  const key = [sessionId, model, subagent].join('|');
+
+  if (key && key !== opencodeLastSyncKey) {
+    opencodeLastSyncKey = key;
+    send('engine:sync', {
+      agent: 'opencode',
+      sessionId,
+      model,
+      subagent
+    });
+  }
+}
+
+async function pollOpenCodeSession(sessionId) {
+  if (!opencodeService?.url || !sessionId) return;
+  try {
+    const messages = await fetchJson(
+      opencodeService.url + '/session/' + encodeURIComponent(sessionId) + '/message?limit=6',
+      { method: 'GET' },
+      5000
+    );
+    if (!Array.isArray(messages) || !messages.length) return;
+    const latest = [...messages].reverse().find((item) => item?.info);
+    if (latest) syncOpenCodeMessageState(sessionId, latest);
+  } catch {}
+}
+
+function startOpenCodeSync(sessionId) {
+  stopOpenCodeSync();
+  if (!sessionId) return;
+  pollOpenCodeSession(sessionId);
+  opencodeSyncTimer = setInterval(() => pollOpenCodeSession(sessionId), 1800);
+}
+
+async function runOpenCodeSharedPrompt(prompt, options = {}) {
+  const cwd = currentCwd || projectRoot || os.homedir();
+  let shared;
+
+  try {
+    shared = await ensureOpenCodeSession(cwd, options.engineSessionId || opencodeActiveSessionId);
+  } catch (error) {
+    send('chat:complete', {
+      ok: false,
+      agent: 'opencode',
+      error: error.message,
+      text: ''
+    });
+    return;
+  }
+
+  const { service, sessionId } = shared;
+  opencodeActiveSessionId = sessionId;
+  startOpenCodeSync(sessionId);
+
+  send('chat:session', { agent: 'opencode', sessionId });
+  send('chat:status', {
+    status: 'running',
+    agent: 'opencode',
+    destination: 'OpenCode',
+    cwd,
+    sessionId
+  });
+
+  send('terminal:data', {
+    raw: '\r\n[TermBridge] Sending prompt to the shared OpenCode session…\r\n',
+    agent: 'opencode',
+    source: 'chat-runner'
+  });
+
+  const body = {
+    parts: [{ type: 'text', text: String(prompt || '') }]
+  };
+
+  const model = openCodeModelObject(options.model);
+  if (model) body.model = model;
+  if (options.subagent && options.subagent !== 'Default') {
+    body.agent = String(options.subagent);
+  }
+
+  opencodeController = new AbortController();
+
+  try {
+    const response = await fetchJson(
+      service.url + '/session/' + encodeURIComponent(sessionId) + '/message',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        signal: opencodeController.signal
+      },
+      15 * 60 * 1000
+    );
+
+    const text = extractOpenCodeMessageText(response).trim();
+    syncOpenCodeMessageState(sessionId, response);
+
+    send('chat:complete', {
+      ok: Boolean(text),
+      agent: 'opencode',
+      code: 0,
+      sessionId,
+      error: text ? '' : 'OpenCode completed but returned no visible text.',
+      text
+    });
+
+    send('terminal:data', {
+      raw: '[TermBridge] OpenCode reply received in the shared session.\r\n',
+      agent: 'opencode',
+      source: 'chat-runner'
+    });
+  } catch (error) {
+    const aborted = error?.name === 'AbortError';
+    send('chat:complete', {
+      ok: false,
+      agent: 'opencode',
+      sessionId,
+      error: aborted ? 'OpenCode request stopped.' : error.message,
+      text: ''
+    });
+  } finally {
+    opencodeController = null;
+  }
 }
 
 function parseHelpCapabilities(text) {
