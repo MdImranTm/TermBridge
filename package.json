@@ -1,7 +1,7 @@
 {
   "name": "termbridge",
-  "version": "1.1.0",
-  "description": "Professional Windows workspace for Codex, Claude Code, OpenCode, local terminals, and custom AI APIs with automatic CLI discovery and reliable chat transport.",
+  "version": "1.2.0",
+  "description": "Professional Windows AI coding workspace with real interactive PTY terminal, automatic CLI boot, runtime capability discovery, and reliable chat transport.",
   "main": "main.js",
   "author": "MdImranTm",
   "license": "MIT",
@@ -12,7 +12,9 @@
   },
   "dependencies": {
     "node-pty": "^1.1.0",
-    "cross-spawn": "^7.0.6"
+    "cross-spawn": "^7.0.6",
+    "@xterm/xterm": "6.0.0",
+    "@xterm/addon-fit": "0.11.0"
   },
   "devDependencies": {
     "electron": "44.4.3",
