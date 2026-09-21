@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta http-equiv="Content-Security-Policy" content="default-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:;">
   <title>TermBridge</title>
+  <link rel="stylesheet" href="../node_modules/@xterm/xterm/css/xterm.css" />
   <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
@@ -72,7 +73,15 @@
       </header>
 
       <section class="enginebar">
-        <div id="toolTabs" class="tool-tabs"></div>
+        <div class="engine-picker">
+          <label>ENGINE</label>
+          <div class="engine-picker-row">
+            <select id="engineSelect" aria-label="Select engine"></select>
+            <span id="engineBootState" class="engine-boot-state"><span class="mini-spinner"></span><span id="engineBootText">Ready</span></span>
+          </div>
+        </div>
+
+        <div id="toolTabs" class="tool-tabs compact-tabs"></div>
 
         <div class="control model-control">
           <label>MODEL</label>
@@ -183,13 +192,14 @@
 
           <div id="terminalView" class="right-view active">
             <div class="terminal-head">
-              <div><strong>Raw terminal</strong><span>Interactive CLI/TUI output stays here</span></div>
+              <div><strong id="terminalTitle">Interactive terminal</strong><span id="terminalSubtitle">Real PTY · CLI/TUI keyboard input works here</span></div>
               <div class="terminal-actions">
+                <span id="terminalState" class="terminal-state waiting"><span class="mini-spinner"></span><span>Waiting</span></span>
                 <button id="launchCliBtn" class="small-button">Open CLI</button>
                 <button id="clearTerminal" class="small-button">Clear</button>
               </div>
             </div>
-            <pre id="terminalOutput" class="terminal-output"></pre>
+            <div id="terminalOutput" class="terminal-output" tabindex="0"></div>
             <div class="terminal-input">
               <input id="terminalInput" type="text" placeholder="Send raw terminal input…" autocomplete="off" />
               <button id="terminalSend">Send</button>
@@ -309,6 +319,8 @@
     </div>
   </div>
 
+  <script src="../node_modules/@xterm/xterm/lib/xterm.js"></script>
+  <script src="../node_modules/@xterm/addon-fit/lib/addon-fit.js"></script>
   <script src="./app.js"></script>
 </body>
 </html>
