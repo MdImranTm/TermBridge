@@ -1067,6 +1067,22 @@ function buildLaunch(agent, options = {}) {
   } else if (agent === 'claude') {
     if (model) cliArgs.push('--model', model);
   } else if (agent === 'opencode') {
+    if (options.opencodeAttachUrl && options.engineSessionId) {
+      const attachArgs = [
+        'attach',
+        options.opencodeAttachUrl,
+        '--dir',
+        options.opencodeDir || currentCwd || os.homedir(),
+        '--session',
+        options.engineSessionId
+      ];
+      return {
+        shell: 'powershell.exe',
+        args: ['-NoLogo', '-NoProfile', '-NoExit'],
+        title: TOOLS[agent]?.label || agent,
+        initial: '& ' + ['opencode', ...attachArgs].map(psQuote).join(' ')
+      };
+    }
     if (model) cliArgs.push('--model', model);
     if (subagent) cliArgs.push('--agent', subagent);
   }
@@ -1103,14 +1119,45 @@ async function startTerminal(agent = currentAgent, cwd = currentCwd, options = {
     return { ok: false, reason: 'not-installed' };
   }
 
-  const launch = buildLaunch(selectedAgent, options);
-  terminalLaunch = { ...launch, options };
+  let effectiveOptions = { ...options };
+
+  if (selectedAgent === 'opencode') {
+    try {
+      const shared = await ensureOpenCodeSession(
+        selectedCwd,
+        options.engineSessionId || opencodeActiveSessionId
+      );
+      effectiveOptions = {
+        ...options,
+        engineSessionId: shared.sessionId,
+        opencodeAttachUrl: shared.service.url,
+        opencodeDir: selectedCwd
+      };
+      opencodeActiveSessionId = shared.sessionId;
+      startOpenCodeSync(shared.sessionId);
+      send('chat:session', { agent: 'opencode', sessionId: shared.sessionId });
+    } catch (error) {
+      send('terminal:status', {
+        status: 'error',
+        error: error.message,
+        agent: selectedAgent,
+        cwd: selectedCwd
+      });
+      return { ok: false, reason: error.message };
+    }
+  } else {
+    stopOpenCodeSync();
+  }
+
+  const launch = buildLaunch(selectedAgent, effectiveOptions);
+  terminalLaunch = { ...launch, options: effectiveOptions };
 
   send('terminal:status', {
     status: 'starting',
     agent: selectedAgent,
     cwd: selectedCwd,
-    launch
+    launch,
+    sessionId: effectiveOptions.engineSessionId || ''
   });
 
   let instance;
@@ -1147,7 +1194,8 @@ async function startTerminal(agent = currentAgent, cwd = currentCwd, options = {
       status: 'ready',
       agent: selectedAgent,
       cwd: selectedCwd,
-      launch
+      launch,
+      sessionId: effectiveOptions.engineSessionId || ''
     });
   };
 
@@ -1176,7 +1224,14 @@ async function startTerminal(agent = currentAgent, cwd = currentCwd, options = {
   // Some CLIs may wait silently for authentication/input.
   setTimeout(markReady, launch.initial ? 2200 : 700);
 
-  return { ok: true, agent: selectedAgent, cwd: selectedCwd, launch, status: 'starting' };
+  return {
+    ok: true,
+    agent: selectedAgent,
+    cwd: selectedCwd,
+    launch,
+    status: 'starting',
+    sessionId: effectiveOptions.engineSessionId || ''
+  };
 }
 
 function extractJsonText(obj) {
@@ -1335,6 +1390,12 @@ function buildChatCommand(agent, prompt, options = {}) {
 }
 
 async function runChatPrompt(agent, prompt, options = {}) {
+  if (agent === 'opencode') {
+    if (!(await commandExists('opencode'))) return { ok: false, reason: 'not-installed' };
+    runOpenCodeSharedPrompt(prompt, options);
+    return { ok: true, accepted: true, agent: 'opencode', destination: 'OpenCode' };
+  }
+
   const spec = buildChatCommand(agent, prompt, options);
   if (!spec) return { ok: false, reason: 'not-ai' };
   if (!(await commandExists(spec.command))) return { ok: false, reason: 'not-installed' };
@@ -1672,6 +1733,16 @@ app.whenReady().then(() => {
       try { providerController.abort(); } catch {}
       providerController = null;
     }
+    if (opencodeController) {
+      try { opencodeController.abort(); } catch {}
+      opencodeController = null;
+    }
+    if (opencodeService?.url && opencodeActiveSessionId) {
+      fetch(
+        opencodeService.url + '/session/' + encodeURIComponent(opencodeActiveSessionId) + '/abort',
+        { method: 'POST' }
+      ).catch(() => {});
+    }
     return true;
   });
 
@@ -1734,6 +1805,10 @@ app.on('before-quit', () => {
   if (providerController) {
     try { providerController.abort(); } catch {}
   }
+  if (opencodeController) {
+    try { opencodeController.abort(); } catch {}
+  }
+  stopOpenCodeService();
 });
 
 app.on('window-all-closed', () => {
