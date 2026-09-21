@@ -648,6 +648,8 @@ function updateCustomModelVisibility() {
 }
 
 async function loadEngineCapabilities(applyAfter = false) {
+  const capabilityAgent = state.agent;
+  const capabilityProviderId = selectedProviderId;
   els.customModelInput.classList.add('hidden');
 
   if (state.agent === 'provider') {
@@ -671,6 +673,7 @@ async function loadEngineCapabilities(applyAfter = false) {
     options.providerId = provider.id;
     let models = [];
     const result = await api.providerModels(provider.id);
+    if (state.agent !== capabilityAgent || selectedProviderId !== capabilityProviderId) return;
     if (result?.ok) models = result.models || [];
 
     const desired = options.model && options.model !== 'Default'
@@ -722,7 +725,9 @@ async function loadEngineCapabilities(applyAfter = false) {
     return;
   }
 
-  currentCapabilities = await api.getCapabilities(state.agent);
+  const detectedCapabilities = await api.getCapabilities(capabilityAgent);
+  if (state.agent !== capabilityAgent) return;
+  currentCapabilities = detectedCapabilities;
 
   const models = ['Default', ...(currentCapabilities.models || []).filter((x) => x !== 'Default'), '__custom__'];
   const knownModel = models.includes(options.model);
@@ -783,7 +788,15 @@ async function setEngine(agent) {
   renderToolTabs();
   renderChatHeader();
 
-  const tool = state.tools[agent];
+  let tool = state.tools[agent];
+  if (CLI_AI_TOOLS.includes(agent) && tool && !tool.installed) {
+    state.tools = await api.detectTools();
+    if (token !== engineSwitchToken) return;
+    renderSetup();
+    renderToolTabs();
+    tool = state.tools[agent];
+  }
+
   if (CLI_AI_TOOLS.includes(agent) && tool && !tool.installed) {
     setStatus(TOOL_NAMES[agent] + ' not installed', 'error');
     setEngineBootState('missing', 'Missing');
@@ -872,35 +885,49 @@ async function applyConfiguration() {
   renderChatHeader();
 
   if (state.agent === 'provider') {
-    setStatus('Configuration applied', 'ok');
+    setStatus('Provider configuration applied', 'ok');
+    setEngineBootState('ready', 'Ready');
     addActivity('Provider configuration applied', engineDisplayName() + ' · ' + options.model);
     return;
   }
 
-  if (CLI_AI_TOOLS.includes(state.agent)) {
-    const tool = state.tools[state.agent];
-    if (tool && !tool.installed) {
-      setStatus('Not installed', 'error');
-      openSettings('clis');
-      return;
-    }
-
-    setStatus('Applying configuration…', 'busy');
-    const result = await api.startAgent(state.agent, options);
-    setStatus(result?.ok ? 'Configuration applied' : 'CLI launch failed', result?.ok ? 'ok' : 'error');
-    addActivity('AI configuration applied', engineDisplayName() + (options.model !== 'Default' ? ' · ' + options.model : ''));
+  const tool = state.tools[state.agent];
+  if (CLI_AI_TOOLS.includes(state.agent) && tool && !tool.installed) {
+    setStatus('Not installed', 'error');
+    setEngineBootState('missing', 'Missing');
+    setTerminalState('missing', 'Setup');
+    openSettings('clis');
     return;
   }
 
-  setStatus('Restarting terminal…', 'busy');
+  switchRightView('terminal');
+  resetTerminalView();
+  setStatus('Applying ' + engineDisplayName() + ' configuration…', 'busy');
+  setEngineBootState('starting', 'Applying');
+  setTerminalState('waiting', 'Waiting');
+
   const result = await api.startAgent(state.agent, options);
-  setStatus(result?.ok ? 'Ready' : 'Terminal error', result?.ok ? 'ok' : 'error');
+
+  if (!result?.ok) {
+    setStatus('Configuration failed', 'error');
+    setEngineBootState('error', 'Error');
+    setTerminalState('error', 'Error');
+    addActivity('Configuration failed', engineDisplayName());
+    return;
+  }
+
+  addActivity(
+    'Configuration applied',
+    engineDisplayName() +
+      (options.model !== 'Default' ? ' · ' + options.model : '') +
+      (options.subagent !== 'Default' ? ' · ' + options.subagent : '')
+  );
 }
 
 function renderCapabilities() {
   els.capabilitiesList.innerHTML = '';
 
-  const addSection = (title, items) => {
+  const addSection = (title, items, onSelect = null) => {
     if (!items?.length) return;
 
     const section = document.createElement('section');
@@ -917,6 +944,7 @@ function renderCapabilities() {
       button.className = 'capability-chip';
       button.textContent = item.name || item;
       button.title = item.description || '';
+      if (onSelect) button.addEventListener('click', () => onSelect(item));
       row.appendChild(button);
     }
 
@@ -926,18 +954,49 @@ function renderCapabilities() {
 
   addSection(
     'MODELS',
-    (currentCapabilities.models || []).map((name) => ({ name }))
+    (currentCapabilities.models || []).map((name) => ({ name })),
+    (item) => {
+      const name = item.name || item;
+      const exists = [...els.modelSelect.options].some((option) => option.value === name);
+      if (exists) {
+        els.modelSelect.value = name;
+      } else {
+        els.modelSelect.value = '__custom__';
+        els.customModelInput.value = name;
+      }
+      updateCustomModelVisibility();
+      scheduleAutoApply();
+    }
   );
+
   addSection(
     'AGENTS / MODES',
-    (currentCapabilities.agents || []).map((name) => ({ name }))
+    (currentCapabilities.agents || []).map((name) => ({ name })),
+    (item) => {
+      const name = item.name || item;
+      const exists = [...els.agentSelect.options].some((option) => option.value === name);
+      if (exists) {
+        els.agentSelect.value = name;
+        scheduleAutoApply();
+      }
+    }
   );
-  addSection('COMMANDS', currentCapabilities.commands || []);
-  addSection('OPTIONS', currentCapabilities.options || []);
+
+  addSection('COMMANDS', currentCapabilities.commands || [], (item) => {
+    switchRightView('terminal');
+    els.terminalInput.value = String(item.name || item);
+    els.terminalInput.focus();
+  });
+
+  addSection('OPTIONS', currentCapabilities.options || [], (item) => {
+    switchRightView('terminal');
+    els.terminalInput.value = String(item.name || item);
+    els.terminalInput.focus();
+  });
 
   if (!els.capabilitiesList.children.length) {
     els.capabilitiesList.innerHTML =
-      '<div class="empty-panel compact"><b>No extra options detected</b><span>This engine may not expose discoverable CLI capabilities.</span></div>';
+      '<div class="empty-panel compact"><b>No extra options detected</b><span>The real interactive terminal still exposes the selected CLI exactly as installed.</span></div>';
   }
 }
 
@@ -1589,14 +1648,19 @@ async function launchActiveCli() {
   }
 
   switchRightView('terminal');
-  setStatus('Opening CLI…', 'busy');
+  resetTerminalView();
+  setStatus('Opening ' + engineDisplayName() + '…', 'busy');
+  setEngineBootState('starting', 'Starting');
+  setTerminalState('waiting', 'Waiting');
+
   const result = await api.startAgent(state.agent, options);
 
   if (result?.ok) {
-    setStatus('CLI open', 'ok');
     addActivity('Interactive CLI opened', engineDisplayName());
   } else {
     setStatus('CLI error', 'error');
+    setEngineBootState(result?.reason === 'not-installed' ? 'missing' : 'error', result?.reason === 'not-installed' ? 'Missing' : 'Error');
+    setTerminalState(result?.reason === 'not-installed' ? 'missing' : 'error', result?.reason === 'not-installed' ? 'Setup' : 'Error');
     if (result?.reason === 'not-installed') openSettings('clis');
   }
 }
