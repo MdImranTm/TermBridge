@@ -56,7 +56,7 @@ if (/Preview only|fake data|simulated/i.test(app)) {
   throw new Error('Preview-only implementation text found in production renderer.');
 }
 
-if (app.includes("$('.custom-only').forEach")) {
+if (/(^|[^$])\$\('\.custom-only'\)\.forEach/.test(app)) {
   throw new Error('Invalid single-element selector usage found for custom provider fields.');
 }
 
