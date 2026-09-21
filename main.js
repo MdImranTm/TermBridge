@@ -8,6 +8,7 @@ const pty = require('node-pty');
 let mainWindow = null;
 let terminal = null;
 let currentCwd = os.homedir();
+let projectRoot = null;
 let currentAgent = 'powershell';
 let terminalLaunch = null;
 let chatProcess = null;
@@ -106,34 +107,83 @@ async function discoverCapabilities(agent) {
 }
 
 function safeProjectEntries(root, dir = root, depth = 0, acc = []) {
-  if (depth > 4 || acc.length > 1200) return acc;
+  if (depth > 5 || acc.length >= 700) return acc;
   let items = [];
   try { items = fs.readdirSync(dir, { withFileTypes: true }); } catch { return acc; }
-  const ignored = new Set(['node_modules','.git','.next','dist','build','release','.idea','.cache','coverage']);
+
+  const ignored = new Set([
+    'node_modules','.git','.next','dist','build','release','out','target','coverage',
+    '.idea','.vscode','.cache','.gradle','.dart_tool','.flutter-plugins',
+    '.pytest_cache','__pycache__','.venv','venv','Pods','.turbo','.parcel-cache',
+    '.nuxt','.output','.expo','.angular','.serverless','.terraform'
+  ]);
+
+  items = items
+    .filter(item => !ignored.has(item.name) && item.name !== 'Thumbs.db' && item.name !== '.DS_Store')
+    .sort((a,b) => {
+      if (a.isDirectory() !== b.isDirectory()) return a.isDirectory() ? -1 : 1;
+      return a.name.localeCompare(b.name, undefined, { numeric:true, sensitivity:'base' });
+    });
+
   for (const item of items) {
-    if (acc.length > 1200) break;
-    if (ignored.has(item.name)) continue;
+    if (acc.length >= 700) break;
+    if (item.isSymbolicLink()) continue;
     const full = path.join(dir, item.name);
     const rel = path.relative(root, full);
-    acc.push({ name: item.name, rel, type: item.isDirectory() ? 'folder' : 'file', depth });
+    acc.push({ name:item.name, rel, type:item.isDirectory() ? 'folder' : 'file', depth });
     if (item.isDirectory()) safeProjectEntries(root, full, depth + 1, acc);
   }
   return acc;
 }
 
-function projectInfo(folder = currentCwd) {
-  const info = { path: folder, name: path.basename(folder) || folder, entries: [], markers: [], package: null };
+function projectInfo(folder = projectRoot) {
+  if (!folder || !fs.existsSync(folder)) return null;
+  const info = {
+    path:folder,
+    name:path.basename(folder) || folder,
+    entries:[],
+    markers:[],
+    package:null
+  };
   info.entries = safeProjectEntries(folder);
-  const markers = ['package.json','pubspec.yaml','requirements.txt','pyproject.toml','Cargo.toml','go.mod','composer.json','README.md'];
+  const markers = [
+    'package.json','pubspec.yaml','requirements.txt','pyproject.toml',
+    'Cargo.toml','go.mod','composer.json','README.md','vite.config.ts',
+    'vite.config.js','next.config.js','next.config.mjs'
+  ];
   info.markers = markers.filter(name => fs.existsSync(path.join(folder, name)));
   const packagePath = path.join(folder, 'package.json');
   if (fs.existsSync(packagePath)) {
     try {
       const pkg = JSON.parse(fs.readFileSync(packagePath, 'utf8'));
-      info.package = { name: pkg.name || '', version: pkg.version || '', scripts: pkg.scripts || {} };
+      info.package = {
+        name:pkg.name || '',
+        version:pkg.version || '',
+        scripts:pkg.scripts || {}
+      };
     } catch {}
   }
   return info;
+}
+
+function workspaceStatePath() {
+  return path.join(app.getPath('userData'), 'workspace-state.json');
+}
+
+function loadWorkspaceState() {
+  try {
+    const saved = JSON.parse(fs.readFileSync(workspaceStatePath(), 'utf8'));
+    if (saved?.projectRoot && fs.existsSync(saved.projectRoot) && fs.statSync(saved.projectRoot).isDirectory()) {
+      projectRoot = saved.projectRoot;
+      currentCwd = projectRoot;
+    }
+  } catch {}
+}
+
+function saveWorkspaceState() {
+  try {
+    fs.writeFileSync(workspaceStatePath(), JSON.stringify({ projectRoot }, null, 2), 'utf8');
+  } catch {}
 }
 
 function stopTerminal() {
@@ -353,13 +403,15 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  loadWorkspaceState();
+
   ipcMain.handle('app:state', async () => ({
     cwd: currentCwd,
     agent: currentAgent,
     platform: process.platform,
     version: app.getVersion(),
     tools: await detectTools(),
-    project: projectInfo(currentCwd)
+    project: projectRoot ? projectInfo(projectRoot) : null
   }));
 
   ipcMain.handle('tools:detect', () => detectTools());
@@ -396,14 +448,16 @@ app.whenReady().then(() => {
       properties: ['openDirectory']
     });
     if (result.canceled || !result.filePaths[0]) return null;
-    currentCwd = result.filePaths[0];
+    projectRoot = result.filePaths[0];
+    currentCwd = projectRoot;
+    saveWorkspaceState();
     stopTerminal();
-    const project = projectInfo(currentCwd);
+    const project = projectInfo(projectRoot);
     send('project:changed', project);
     return project;
   });
 
-  ipcMain.handle('project:refresh', () => projectInfo(currentCwd));
+  ipcMain.handle('project:refresh', () => projectRoot ? projectInfo(projectRoot) : null);
 
   ipcMain.handle('agent:start', (_event, payload) => {
     if (typeof payload === 'string') return startTerminal(payload, currentCwd, {});
