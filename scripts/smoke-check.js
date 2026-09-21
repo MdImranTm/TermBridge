@@ -59,6 +59,9 @@ if (/Preview only|fake data|simulated/i.test(app)) {
 if (/(^|[^$])\$\('\.custom-only'\)\.forEach/.test(app)) {
   throw new Error('Invalid single-element selector usage found for custom provider fields.');
 }
+if (!app.includes("document.querySelectorAll('.custom-only').forEach")) {
+  throw new Error('Custom provider field selector fix is missing.');
+}
 
 if (!main.includes("initial: '& ' +")) {
   throw new Error('Interactive AI CLI launch is not using the PowerShell call operator.');
