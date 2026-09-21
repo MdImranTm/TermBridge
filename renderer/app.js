@@ -79,6 +79,9 @@ const els = {
   settingsBtn: $('#settingsBtn'),
 
   toolTabs: $('#toolTabs'),
+  engineSelect: $('#engineSelect'),
+  engineBootState: $('#engineBootState'),
+  engineBootText: $('#engineBootText'),
   modelSelect: $('#modelSelect'),
   customModelInput: $('#customModelInput'),
   agentSelect: $('#agentSelect'),
@@ -102,6 +105,9 @@ const els = {
   sendBtn: $('#sendBtn'),
 
   terminalOutput: $('#terminalOutput'),
+  terminalTitle: $('#terminalTitle'),
+  terminalSubtitle: $('#terminalSubtitle'),
+  terminalState: $('#terminalState'),
   terminalInput: $('#terminalInput'),
   terminalSend: $('#terminalSend'),
   launchCliBtn: $('#launchCliBtn'),
@@ -172,6 +178,11 @@ let pendingResponse = false;
 let streamingAssistantId = null;
 let streamingText = '';
 let selectedProviderId = '';
+let terminalUI = null;
+let terminalFit = null;
+let terminalResizeObserver = null;
+let engineSwitchToken = 0;
+let configApplyTimer = null;
 
 function uid() {
   return (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random())
@@ -204,6 +215,91 @@ function setStatus(text, kind = 'ok') {
     kind === 'error' ? '#e65f76' :
     kind === 'busy' ? '#dca72a' :
     '#20b879';
+}
+
+function setEngineBootState(kind = 'ready', text = 'Ready') {
+  els.engineBootState.className = 'engine-boot-state ' + kind;
+  els.engineBootText.textContent = text;
+}
+
+function setTerminalState(kind = 'waiting', text = 'Waiting') {
+  els.terminalState.className = 'terminal-state ' + kind;
+  const label = els.terminalState.querySelector('span:last-child');
+  if (label) label.textContent = text;
+}
+
+function terminalHasFocus() {
+  return Boolean(document.activeElement && els.terminalOutput.contains(document.activeElement));
+}
+
+function fitTerminalSoon() {
+  requestAnimationFrame(() => {
+    try {
+      terminalFit?.fit();
+    } catch {}
+  });
+}
+
+function initTerminalUI() {
+  if (terminalUI || !window.Terminal || !window.FitAddon?.FitAddon) return;
+
+  terminalUI = new window.Terminal({
+    cursorBlink: true,
+    cursorStyle: 'bar',
+    fontFamily: '"Cascadia Mono", Consolas, "Courier New", monospace',
+    fontSize: 10,
+    lineHeight: 1.18,
+    letterSpacing: 0,
+    scrollback: 8000,
+    convertEol: false,
+    allowTransparency: false,
+    theme: {
+      background: '#101318',
+      foreground: '#dbe2ea',
+      cursor: '#91a2ff',
+      cursorAccent: '#101318',
+      selectionBackground: '#33405e',
+      black: '#101318',
+      brightBlack: '#697386',
+      white: '#dbe2ea',
+      brightWhite: '#ffffff'
+    }
+  });
+
+  terminalFit = new window.FitAddon.FitAddon();
+  terminalUI.loadAddon(terminalFit);
+  terminalUI.open(els.terminalOutput);
+  fitTerminalSoon();
+
+  terminalUI.onData((data) => {
+    api.send(data);
+  });
+
+  terminalUI.onResize(({ cols, rows }) => {
+    api.resize(cols, rows);
+  });
+
+  terminalResizeObserver = new ResizeObserver(() => fitTerminalSoon());
+  terminalResizeObserver.observe(els.terminalOutput);
+
+  terminalUI.focus();
+}
+
+function resetTerminalView() {
+  terminalText = '';
+  if (terminalUI) {
+    terminalUI.reset();
+    terminalUI.clear();
+  } else {
+    els.terminalOutput.textContent = '';
+  }
+}
+
+function scheduleAutoApply() {
+  clearTimeout(configApplyTimer);
+  configApplyTimer = setTimeout(() => {
+    applyConfiguration();
+  }, 260);
 }
 
 function addActivity(title, detail = '') {
