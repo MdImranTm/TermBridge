@@ -1,7 +1,7 @@
 {
   "name": "termbridge",
-  "version": "1.0.0",
-  "description": "Professional Windows workspace for Codex, Claude Code, OpenCode, local terminals, and custom AI APIs.",
+  "version": "1.1.0",
+  "description": "Professional Windows workspace for Codex, Claude Code, OpenCode, local terminals, and custom AI APIs with automatic CLI discovery and reliable chat transport.",
   "main": "main.js",
   "author": "MdImranTm",
   "license": "MIT",
