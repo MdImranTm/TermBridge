@@ -1,7 +1,7 @@
 {
   "name": "termbridge",
-  "version": "0.2.0",
-  "description": "A professional desktop chat bridge for terminal-based AI tools and shells.",
+  "version": "0.3.0",
+  "description": "Professional desktop workspace for Codex, Claude Code, OpenCode and local terminals.",
   "main": "main.js",
   "author": "MdImranTm",
   "license": "MIT",
@@ -20,13 +20,32 @@
   "build": {
     "appId": "com.termbridge.desktop",
     "productName": "TermBridge",
-    "directories": { "output": "release" },
-    "files": ["main.js","preload.js","renderer/**/*","package.json"],
-    "asarUnpack": ["node_modules/node-pty/**/*"],
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer/**/*",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "node_modules/node-pty/**/*"
+    ],
     "win": {
       "target": [
-        { "target": "nsis", "arch": ["x64"] },
-        { "target": "portable", "arch": ["x64"] }
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
       ]
     },
     "nsis": {
@@ -39,7 +58,11 @@
       "runAfterFinish": true,
       "artifactName": "TermBridge-${version}-Setup.${ext}"
     },
-    "portable": { "artifactName": "TermBridge-${version}-Portable.${ext}" }
+    "portable": {
+      "artifactName": "TermBridge-${version}-Portable.${ext}"
+    }
   },
-  "engines": { "node": ">=22" }
+  "engines": {
+    "node": ">=22"
+  }
 }
