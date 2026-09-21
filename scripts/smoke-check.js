@@ -39,7 +39,7 @@ for (const handler of requiredMainHandlers) {
 const requiredPreloadMethods = [
   'getState','detectTools','getCapabilities','installTool','pickFolder',
   'startAgent','sendChat','sendProviderChat','listProviders','saveProvider',
-  'deleteProvider','testProvider','providerModels'
+  'deleteProvider','testProvider','providerModels','onChatSession'
 ];
 
 for (const method of requiredPreloadMethods) {
@@ -54,6 +54,26 @@ if (!app.includes('window.termbridge')) {
 
 if (/Preview only|fake data|simulated/i.test(app)) {
   throw new Error('Preview-only implementation text found in production renderer.');
+}
+
+if (app.includes("$('.custom-only').forEach")) {
+  throw new Error('Invalid single-element selector usage found for custom provider fields.');
+}
+
+if (!main.includes("initial: '& ' +")) {
+  throw new Error('Interactive AI CLI launch is not using the PowerShell call operator.');
+}
+
+if (!main.includes("['run', '--format', 'json']")) {
+  throw new Error('OpenCode chat runner is not configured for JSON event output.');
+}
+
+if (!main.includes("['session', 'export', detectedSessionId]")) {
+  throw new Error('OpenCode missing-output recovery is not present.');
+}
+
+if (!main.includes("send('chat:session'")) {
+  throw new Error('AI session continuity event is missing.');
 }
 
 console.log('Static smoke checks passed.');
