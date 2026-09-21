@@ -11,97 +11,182 @@
   <div class="app-shell">
     <aside class="sidebar">
       <div class="brand">
-        <div class="logo">T</div>
-        <div>
+        <div class="brand-mark">
+          <span class="mark-caret">&gt;_</span>
+        </div>
+        <div class="brand-copy">
           <strong>TermBridge</strong>
-          <span>AI Terminal Workspace</span>
+          <span>AI terminal workspace</span>
         </div>
       </div>
 
-      <button id="newChat" class="primary-btn">＋ New chat</button>
+      <button id="newChat" class="primary-btn"><span>＋</span> New chat</button>
 
-      <div class="sidebar-label">SESSIONS</div>
+      <div class="sidebar-row">
+        <span class="sidebar-label">CHATS</span>
+        <button id="chatSearchBtn" class="mini-icon" title="Search chats">⌕</button>
+      </div>
+      <div id="chatSearchWrap" class="search-wrap hidden">
+        <input id="chatSearch" placeholder="Search conversations…" />
+      </div>
       <div id="sessionList" class="session-list"></div>
 
-      <div class="sidebar-foot">
-        <div class="security-dot"></div>
-        <div>
-          <strong>Local bridge</strong>
-          <span>Runs on your PC</span>
+      <div class="sidebar-bottom">
+        <button id="setupBtn" class="sidebar-action">
+          <span>⚙</span>
+          <span><b>CLI setup</b><small id="setupSummary">Checking tools…</small></span>
+        </button>
+        <div class="local-status">
+          <span class="security-dot"></span>
+          <span><b>Local workspace</b><small>Runs on this PC</small></span>
         </div>
       </div>
     </aside>
 
     <main class="workspace">
       <header class="topbar">
-        <div class="project-area">
-          <button id="projectBtn" class="project-btn">
-            <span class="folder-icon">▰</span>
-            <span>
-              <small>PROJECT</small>
-              <b id="projectName">Home folder</b>
-            </span>
-          </button>
-        </div>
+        <button id="projectBtn" class="project-btn">
+          <span class="folder-icon">▰</span>
+          <span class="project-copy">
+            <small>WORKSPACE</small>
+            <b id="projectName">Select project folder</b>
+          </span>
+          <span class="chev">⌄</span>
+        </button>
 
-        <div class="agent-tabs">
-          <button class="agent active" data-agent="powershell">PowerShell</button>
-          <button class="agent" data-agent="cmd">CMD</button>
-          <button class="agent" data-agent="codex">Codex</button>
-          <button class="agent" data-agent="claude">Claude</button>
+        <div class="toolbar-center">
+          <button id="reviewBtn" class="review-btn">Review project</button>
+          <span id="projectHint" class="project-hint">Review only runs when you ask</span>
         </div>
 
         <div class="status-wrap">
           <span id="statusDot" class="status-dot"></span>
           <span id="statusText">Ready</span>
-          <button id="restartBtn" class="icon-btn" title="Restart terminal">↻</button>
+          <button id="restartBtn" class="icon-btn" title="Restart active terminal">↻</button>
         </div>
       </header>
 
-      <section class="content">
+      <section class="controlbar">
+        <div class="tool-select-wrap">
+          <label>ENGINE</label>
+          <div id="toolTabs" class="tool-tabs"></div>
+        </div>
+        <div class="select-group">
+          <label>MODEL</label>
+          <select id="modelSelect"></select>
+        </div>
+        <div class="select-group">
+          <label>AGENT</label>
+          <select id="agentSelect"></select>
+        </div>
+        <div class="select-group reasoning-group">
+          <label>REASONING</label>
+          <select id="effortSelect">
+            <option value="default">Default</option>
+            <option value="low">Low</option>
+            <option value="medium">Medium</option>
+            <option value="high">High</option>
+            <option value="xhigh">Extra high</option>
+          </select>
+        </div>
+        <button id="applyConfigBtn" class="secondary-btn">Apply</button>
+      </section>
+
+      <section class="main-grid">
+        <aside class="project-panel">
+          <div class="panel-head">
+            <div>
+              <strong>Project</strong>
+              <span id="projectPath">No folder selected</span>
+            </div>
+            <button id="refreshProjectBtn" class="mini-icon">↻</button>
+          </div>
+          <div id="projectMeta" class="project-meta">
+            <div class="empty-small">Choose a folder to browse project files.</div>
+          </div>
+          <div class="tree-head">FILES</div>
+          <div id="fileTree" class="file-tree"></div>
+        </aside>
+
         <section class="chat-panel">
           <div id="welcome" class="welcome">
-            <div class="welcome-icon">⌁</div>
-            <h1>Your terminal, with a chat interface.</h1>
-            <p>Choose Codex, Claude, PowerShell or CMD. Messages you send here are typed into the same local terminal session and the response streams back into this workspace.</p>
+            <div class="welcome-mark">&gt;_</div>
+            <h1>Work with your project through chat.</h1>
+            <p>Select a project folder, choose an installed coding CLI, then continue the same project from a clean chat interface. Project review never starts automatically.</p>
             <div class="quick-grid">
-              <button class="quick" data-prompt="Check this project and tell me what it does.">Analyze project</button>
-              <button class="quick" data-prompt="Find the main errors in this project and explain them.">Find issues</button>
-              <button class="quick" data-prompt="Run the project tests and report the result.">Run tests</button>
+              <button class="quick" data-action="review"><b>Review project</b><span>Inspect architecture, risks and next steps</span></button>
+              <button class="quick" data-prompt="Find the most important bugs in this project. Do not change files yet."><b>Find issues</b><span>Ask the active AI to inspect problems</span></button>
+              <button class="quick" data-prompt="Explain the current project structure and how its main parts work."><b>Explain project</b><span>Understand the selected workspace</span></button>
             </div>
           </div>
 
           <div id="messages" class="messages"></div>
+          <button id="jumpBottom" class="jump-bottom hidden">↓ New output</button>
 
           <div class="composer-wrap">
+            <div id="missingToolBanner" class="missing-tool hidden">
+              <div><b id="missingToolTitle">Tool not installed</b><span id="missingToolText">Configure this CLI to continue.</span></div>
+              <button id="missingToolAction">Set up</button>
+            </div>
             <div class="composer">
-              <textarea id="composer" rows="1" placeholder="Message the active terminal…"></textarea>
+              <textarea id="composer" rows="1" placeholder="Ask the active CLI to work on this project…"></textarea>
               <button id="sendBtn" class="send-btn" title="Send">➤</button>
             </div>
             <div class="composer-meta">
               <span>Enter to send · Shift+Enter for a new line</span>
-              <span id="activeAgentLabel">PowerShell session</span>
+              <span id="activeAgentLabel">PowerShell</span>
             </div>
           </div>
         </section>
 
-        <aside class="terminal-panel">
-          <div class="terminal-head">
-            <div>
-              <strong>Raw terminal</strong>
-              <span>Live PTY output</span>
-            </div>
-            <button id="clearTerminal" class="ghost-btn">Clear</button>
+        <aside class="right-panel">
+          <div class="right-tabs">
+            <button class="right-tab active" data-view="terminal">Terminal</button>
+            <button class="right-tab" data-view="activity">Activity</button>
           </div>
-          <pre id="terminalOutput" class="terminal-output"></pre>
-          <div class="terminal-note">
-            <span>●</span>
-            Interactive programs remain attached to this session.
+          <div id="terminalView" class="right-view active">
+            <div class="terminal-toolbar">
+              <span>RAW PTY OUTPUT</span>
+              <button id="clearTerminal" class="ghost-btn">Clear</button>
+            </div>
+            <pre id="terminalOutput" class="terminal-output"></pre>
+            <div class="terminal-input-row">
+              <input id="terminalInput" placeholder="Send raw terminal input…" />
+              <button id="terminalSend">Send</button>
+            </div>
+          </div>
+          <div id="activityView" class="right-view">
+            <div id="activityList" class="activity-list">
+              <div class="empty-small">Commands, setup events and session changes appear here.</div>
+            </div>
           </div>
         </aside>
       </section>
     </main>
   </div>
+
+  <div id="sessionMenu" class="context-menu hidden">
+    <button data-session-action="rename">Rename</button>
+    <button data-session-action="duplicate">Duplicate</button>
+    <button data-session-action="clear">Clear messages</button>
+    <button data-session-action="export">Export JSON</button>
+    <div class="menu-line"></div>
+    <button data-session-action="delete" class="danger">Delete</button>
+  </div>
+
+  <div id="setupModal" class="modal-backdrop hidden">
+    <div class="modal">
+      <div class="modal-head">
+        <div><strong>CLI setup</strong><span>TermBridge detects local coding tools and guides configuration.</span></div>
+        <button id="closeSetup" class="icon-btn">×</button>
+      </div>
+      <div id="setupList" class="setup-list"></div>
+      <div class="setup-note">
+        TermBridge can install supported npm CLIs when Node.js/npm is available. Account login, API keys and paid-provider authorization still require your approval inside the tool.
+      </div>
+    </div>
+  </div>
+
   <script src="./app.js"></script>
 </body>
 </html>
