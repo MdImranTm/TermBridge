@@ -90,7 +90,7 @@ async function discoverCapabilities(agent) {
   if (agent === 'opencode') {
     const [models, agents] = await Promise.all([
       execCapture('opencode', ['models'], { timeout: 12000 }),
-      execCapture('opencode', ['agent', 'list'], { timeout: 8000 })
+      execCapture('opencode', ['debug', 'agents'], { timeout: 8000 })
     ]);
     const modelList = models.ok
       ? models.stdout.split(/\r?\n/).map(s => s.trim()).filter(Boolean).filter(s => /[a-z0-9][/:_-][a-z0-9]/i.test(s)).slice(0, 150)
@@ -458,6 +458,22 @@ app.whenReady().then(() => {
   });
 
   ipcMain.handle('project:refresh', () => projectRoot ? projectInfo(projectRoot) : null);
+
+  ipcMain.handle('project:open-path', (_event, folder) => {
+    try {
+      const resolved = path.resolve(String(folder || ''));
+      if (!fs.existsSync(resolved) || !fs.statSync(resolved).isDirectory()) return null;
+      projectRoot = resolved;
+      currentCwd = projectRoot;
+      saveWorkspaceState();
+      stopTerminal();
+      const project = projectInfo(projectRoot);
+      send('project:changed', project);
+      return project;
+    } catch {
+      return null;
+    }
+  });
 
   ipcMain.handle('agent:start', (_event, payload) => {
     if (typeof payload === 'string') return startTerminal(payload, currentCwd, {});
