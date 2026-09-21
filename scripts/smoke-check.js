@@ -14,8 +14,8 @@ if (duplicates.length) {
 const requiredIds = [
   'newChat','sessionList','projectBtn','projectName','toolTabs',
   'modelSelect','agentSelect','effortSelect','messages','composer',
-  'sendBtn','terminalOutput','setupList','providerList','providerForm',
-  'paletteModal','capabilitiesList'
+  'sendBtn','terminalOutput','terminalState','engineSelect','engineBootState',
+  'setupList','providerList','providerForm','paletteModal','capabilitiesList'
 ];
 
 for (const id of requiredIds) {
@@ -77,6 +77,43 @@ if (!main.includes("['session', 'export', detectedSessionId]")) {
 
 if (!main.includes("send('chat:session'")) {
   throw new Error('AI session continuity event is missing.');
+}
+
+
+if (!html.includes('@xterm/xterm/lib/xterm.js') || !html.includes('@xterm/addon-fit/lib/addon-fit.js')) {
+  throw new Error('Interactive xterm runtime assets are not wired into the renderer.');
+}
+
+if (!app.includes('async function selectSession(id)')) {
+  throw new Error('Chat/session switching must remain async because it restores projects and engines.');
+}
+
+if (!app.includes("$('.right-tab').forEach") || !app.includes("$('.right-view').forEach")) {
+  throw new Error('Right panel selectors must use the multi-element selector helper.');
+}
+
+if (!app.includes("els.engineSelect.addEventListener('change'")) {
+  throw new Error('Engine selector change handler is missing.');
+}
+
+if (!app.includes('initTerminalUI()') || !app.includes('terminalUI.onData')) {
+  throw new Error('Real interactive terminal initialization/input passthrough is missing.');
+}
+
+if (!app.includes('scheduleAutoApply()')) {
+  throw new Error('Automatic model/agent/reasoning apply behavior is missing.');
+}
+
+if (!main.includes('if (terminal === instance) terminal = null')) {
+  throw new Error('PTY instance ownership race protection is missing.');
+}
+
+if (!main.includes("status: 'starting'") || !main.includes("status: 'ready'")) {
+  throw new Error('Terminal Starting/Ready lifecycle events are missing.');
+}
+
+if (!main.includes("initialSent = true")) {
+  throw new Error('CLI boot readiness must wait until the actual AI command is launched.');
 }
 
 console.log('Static smoke checks passed.');
