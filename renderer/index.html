@@ -278,6 +278,8 @@
 
                 <label class="field full"><span>Default model</span><input id="providerDefaultModel" placeholder="model-id" /></label>
                 <label class="field full"><span>Extra headers (JSON)</span><textarea id="providerHeaders" rows="4">{}</textarea></label>
+                <label class="field full custom-only"><span>Custom REST body template (JSON)</span><textarea id="providerBodyTemplate" rows="5">{"model":"{{model}}","messages":"{{messages}}"}</textarea></label>
+                <label class="field full custom-only"><span>Response path (optional, e.g. data.answer or choices.0.message.content)</span><input id="providerResponsePath" placeholder="data.answer" /></label>
               </div>
 
               <div class="provider-actions">
