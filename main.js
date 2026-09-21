@@ -797,67 +797,89 @@ function buildLaunch(agent, options = {}) {
 
 async function startTerminal(agent = currentAgent, cwd = currentCwd, options = {}) {
   stopTerminal();
-  currentAgent = agent || 'powershell';
-  currentCwd = cwd || projectRoot || os.homedir();
 
-  const tool = TOOLS[currentAgent] || TOOLS.powershell;
+  const selectedAgent = agent || 'powershell';
+  const selectedCwd = cwd || projectRoot || os.homedir();
+  currentAgent = selectedAgent;
+  currentCwd = selectedCwd;
+
+  const tool = TOOLS[selectedAgent] || TOOLS.powershell;
   if (tool.kind === 'ai' && !(await commandExists(tool.command))) {
     send('terminal:status', {
       status: 'not-installed',
-      agent: currentAgent,
-      cwd: currentCwd
+      agent: selectedAgent,
+      cwd: selectedCwd
     });
     return { ok: false, reason: 'not-installed' };
   }
 
-  const launch = buildLaunch(currentAgent, options);
+  const launch = buildLaunch(selectedAgent, options);
   terminalLaunch = { ...launch, options };
 
+  send('terminal:status', {
+    status: 'starting',
+    agent: selectedAgent,
+    cwd: selectedCwd,
+    launch
+  });
+
+  let instance;
   try {
-    terminal = pty.spawn(launch.shell, launch.args, {
+    instance = pty.spawn(launch.shell, launch.args, {
       name: 'xterm-256color',
       cols: 120,
       rows: 34,
-      cwd: currentCwd,
+      cwd: selectedCwd,
       env: {
         ...process.env,
         TERM: 'xterm-256color',
         COLORTERM: 'truecolor'
       }
     });
+    terminal = instance;
   } catch (error) {
     send('terminal:status', {
       status: 'error',
       error: error.message,
-      agent: currentAgent,
-      cwd: currentCwd
+      agent: selectedAgent,
+      cwd: selectedCwd
     });
     return { ok: false, reason: error.message };
   }
 
-  terminal.onData((raw) => {
-    send('terminal:data', { raw, agent: currentAgent, source: 'terminal' });
+  let readySent = false;
+  const markReady = () => {
+    if (readySent || terminal !== instance) return;
+    readySent = true;
+    send('terminal:status', {
+      status: 'ready',
+      agent: selectedAgent,
+      cwd: selectedCwd,
+      launch
+    });
+  };
+
+  instance.onData((raw) => {
+    send('terminal:data', { raw, agent: selectedAgent, source: 'terminal' });
+    markReady();
   });
 
-  terminal.onExit(({ exitCode, signal }) => {
-    send('terminal:exit', { exitCode, signal, agent: currentAgent });
-    terminal = null;
+  instance.onExit(({ exitCode, signal }) => {
+    send('terminal:exit', { exitCode, signal, agent: selectedAgent });
+    if (terminal === instance) terminal = null;
   });
 
   if (launch.initial) {
     setTimeout(() => {
-      if (terminal) terminal.write(launch.initial + '\r');
-    }, 250);
+      if (terminal === instance) instance.write(launch.initial + '\r');
+    }, 220);
   }
 
-  send('terminal:status', {
-    status: 'ready',
-    agent: currentAgent,
-    cwd: currentCwd,
-    launch
-  });
+  // Some CLIs wait silently for input/auth. Mark the PTY ready once the
+  // process has had time to boot even if it has not emitted output yet.
+  setTimeout(markReady, 900);
 
-  return { ok: true, agent: currentAgent, cwd: currentCwd, launch };
+  return { ok: true, agent: selectedAgent, cwd: selectedCwd, launch, status: 'starting' };
 }
 
 function extractJsonText(obj) {
