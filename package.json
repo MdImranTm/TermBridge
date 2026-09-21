@@ -1,6 +1,6 @@
 {
   "name": "termbridge",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Professional desktop workspace for Codex, Claude Code, OpenCode and local terminals.",
   "main": "main.js",
   "author": "MdImranTm",
