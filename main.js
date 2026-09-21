@@ -266,7 +266,7 @@ function extractOpenCodeMessageText(message) {
 }
 
 function syncOpenCodeMessageState(sessionId, message) {
-  const info = message?.info || {};
+  const info = message?.info || message || {};
   const providerID = String(info.providerID || info.provider?.id || '').trim();
   const modelID = String(info.modelID || info.model?.id || '').trim();
   const model = providerID && modelID ? providerID + '/' + modelID : '';
@@ -287,14 +287,25 @@ function syncOpenCodeMessageState(sessionId, message) {
 async function pollOpenCodeSession(sessionId) {
   if (!opencodeService?.url || !sessionId) return;
   try {
-    const messages = await fetchJson(
-      opencodeService.url + '/session/' + encodeURIComponent(sessionId) + '/message?limit=6',
-      { method: 'GET' },
-      5000
-    );
-    if (!Array.isArray(messages) || !messages.length) return;
-    const latest = [...messages].reverse().find((item) => item?.info);
-    if (latest) syncOpenCodeMessageState(sessionId, latest);
+    const [sessionInfo, messages] = await Promise.all([
+      fetchJson(
+        opencodeService.url + '/session/' + encodeURIComponent(sessionId),
+        { method: 'GET' },
+        5000
+      ),
+      fetchJson(
+        opencodeService.url + '/session/' + encodeURIComponent(sessionId) + '/message?limit=6',
+        { method: 'GET' },
+        5000
+      )
+    ]);
+
+    if (sessionInfo) syncOpenCodeMessageState(sessionId, sessionInfo);
+
+    if (Array.isArray(messages) && messages.length) {
+      const latest = [...messages].reverse().find((item) => item?.info);
+      if (latest) syncOpenCodeMessageState(sessionId, latest);
+    }
   } catch {}
 }
 
