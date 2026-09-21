@@ -104,12 +104,17 @@ const els = {
   stopBtn: $('#stopBtn'),
   sendBtn: $('#sendBtn'),
 
+  mainGrid: $('#mainGrid'),
   terminalOutput: $('#terminalOutput'),
   terminalTitle: $('#terminalTitle'),
   terminalSubtitle: $('#terminalSubtitle'),
   terminalState: $('#terminalState'),
   terminalInput: $('#terminalInput'),
   terminalSend: $('#terminalSend'),
+  terminalZoomOut: $('#terminalZoomOut'),
+  terminalZoomReset: $('#terminalZoomReset'),
+  terminalZoomIn: $('#terminalZoomIn'),
+  terminalExpand: $('#terminalExpand'),
   launchCliBtn: $('#launchCliBtn'),
   clearTerminal: $('#clearTerminal'),
   activityList: $('#activityList'),
@@ -183,6 +188,8 @@ let terminalFit = null;
 let terminalResizeObserver = null;
 let engineSwitchToken = 0;
 let configApplyTimer = null;
+let terminalFontSize = Number(localStorage.getItem('termbridge.terminalFontSize') || '7.4');
+let terminalExpanded = localStorage.getItem('termbridge.terminalExpanded') === '1';
 
 function uid() {
   return (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random())
@@ -270,6 +277,26 @@ function fitTerminalSoon() {
   });
 }
 
+function terminalZoomPercent() {
+  return Math.round((terminalFontSize / 9.25) * 100);
+}
+
+function applyTerminalZoom(nextSize, persist = true) {
+  terminalFontSize = Math.max(6.2, Math.min(11.5, Number(nextSize) || 7.4));
+  if (terminalUI) terminalUI.options.fontSize = terminalFontSize;
+  if (els.terminalZoomReset) els.terminalZoomReset.textContent = terminalZoomPercent() + '%';
+  if (persist) localStorage.setItem('termbridge.terminalFontSize', String(terminalFontSize));
+  fitTerminalSoon();
+}
+
+function applyTerminalExpanded(expanded, persist = true) {
+  terminalExpanded = Boolean(expanded);
+  els.mainGrid?.classList.toggle('terminal-expanded', terminalExpanded);
+  if (els.terminalExpand) els.terminalExpand.textContent = terminalExpanded ? 'Normal' : 'Expand';
+  if (persist) localStorage.setItem('termbridge.terminalExpanded', terminalExpanded ? '1' : '0');
+  setTimeout(fitTerminalSoon, 40);
+}
+
 function initTerminalUI() {
   if (terminalUI || !window.Terminal || !window.FitAddon?.FitAddon) return;
 
@@ -277,8 +304,8 @@ function initTerminalUI() {
     cursorBlink: true,
     cursorStyle: 'bar',
     fontFamily: '"Cascadia Mono", Consolas, "Courier New", monospace',
-    fontSize: 10,
-    lineHeight: 1.18,
+    fontSize: terminalFontSize,
+    lineHeight: 1.08,
     letterSpacing: 0,
     scrollback: 8000,
     convertEol: false,
@@ -299,6 +326,8 @@ function initTerminalUI() {
   terminalFit = new window.FitAddon.FitAddon();
   terminalUI.loadAddon(terminalFit);
   terminalUI.open(els.terminalOutput);
+  applyTerminalZoom(terminalFontSize, false);
+  applyTerminalExpanded(terminalExpanded, false);
   fitTerminalSoon();
 
   terminalUI.onData((data) => {
@@ -2002,6 +2031,10 @@ $$('.welcome-card').forEach((button) => {
   });
 });
 
+els.terminalZoomOut.addEventListener('click', () => applyTerminalZoom(terminalFontSize - 0.6));
+els.terminalZoomIn.addEventListener('click', () => applyTerminalZoom(terminalFontSize + 0.6));
+els.terminalZoomReset.addEventListener('click', () => applyTerminalZoom(7.4));
+els.terminalExpand.addEventListener('click', () => applyTerminalExpanded(!terminalExpanded));
 els.launchCliBtn.addEventListener('click', launchActiveCli);
 els.clearTerminal.addEventListener('click', resetTerminalView);
 els.terminalSend.addEventListener('click', async () => {
