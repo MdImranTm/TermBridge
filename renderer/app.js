@@ -190,26 +190,36 @@ async function reviewProject(){
 
 async function sendMessage(override,force=false){
   const text=String(override??els.composer.value).trim();if(!text)return;
-  const tool=state.tools[state.agent];if(AI_TOOLS.includes(state.agent)&&tool&&!tool.installed){openSetup();return;}
-  addMessage('user',text,true);pendingResponse=true;els.composer.value='';resizeComposer();setStatus('Working…','busy');
-  const ok=await api.send(text+'\r');if(!ok)addMessage('assistant','The active terminal is not ready. Open CLI setup and verify the selected tool.',true);
+  const tool=state.tools[state.agent];
+  if(AI_TOOLS.includes(state.agent)&&tool&&!tool.installed){openSetup();return;}
+  addMessage('user',text,true);
+  pendingResponse=true;
+  els.composer.value='';
+  resizeComposer();
+  setStatus('Working…','busy');
+  let result;
+  if(AI_TOOLS.includes(state.agent)){
+    result=await api.sendChat(state.agent,text,options);
+    if(!result?.ok){
+      pendingResponse=false;
+      addMessage('assistant','The selected AI engine could not start. Open CLI setup and verify installation/login.',true);
+    }
+  }else{
+    result=await api.send(text+'\r');
+    if(!result){
+      pendingResponse=false;
+      addMessage('assistant','The active terminal is not ready.',true);
+    }
+  }
   if(force)addActivity('Project review requested',AGENT_NAMES[state.agent]);
 }
 
-function cleanTerminalForChat(raw){
-  return String(raw||'').replace(/\x1b\[[0-?]*[ -\/]*[@-~]/g,'').replace(/\x1b[@-_]/g,'').replace(/\r/g,'');
-}
-let chatBuffer='', chatTimer=null;
 function handleTerminal(raw,agent){
-  terminalText+=raw;if(terminalText.length>180000)terminalText=terminalText.slice(-140000);
-  els.terminal.textContent=terminalText;els.terminal.scrollTop=els.terminal.scrollHeight;
-  if(agent==='setup')return;
-  if(!pendingResponse||!AI_TOOLS.includes(state.agent))return;
-  const clean=cleanTerminalForChat(raw).trim();if(!clean)return;
-  chatBuffer+=(chatBuffer?'\n':'')+clean;
-  clearTimeout(chatTimer);chatTimer=setTimeout(()=>{
-    const v=chatBuffer.trim();chatBuffer='';if(v){addMessage('assistant',v,false);pendingResponse=false;setStatus('Ready','ok');}
-  },900);
+  terminalText+=String(raw||'');
+  if(terminalText.length>180000)terminalText=terminalText.slice(-140000);
+  els.terminal.textContent=terminalText;
+  els.terminal.scrollTop=els.terminal.scrollHeight;
+  if(agent==='setup') setStatus('Installing…','busy');
 }
 
 function setStatus(text,kind='ok'){els.statusText.textContent=text;els.statusDot.style.background=kind==='error'?'#ff657a':kind==='busy'?'#f4c861':'#43d89f';}
