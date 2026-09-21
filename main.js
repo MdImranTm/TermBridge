@@ -328,6 +328,8 @@ function normalizeProvider(input = {}) {
     encryptedSecret: String(input.encryptedSecret || ''),
     defaultModel: String(input.defaultModel || '').trim(),
     headers: input.headers && typeof input.headers === 'object' ? input.headers : {},
+    bodyTemplate: input.bodyTemplate && typeof input.bodyTemplate === 'object' ? input.bodyTemplate : {},
+    responsePath: String(input.responsePath || '').trim(),
     createdAt: Number(input.createdAt || Date.now()),
     updatedAt: Date.now()
   };
@@ -466,6 +468,36 @@ async function fetchJson(url, options = {}, timeoutMs = 30000) {
   }
 }
 
+function valueAtPath(value, dottedPath) {
+  if (!dottedPath) return undefined;
+  return String(dottedPath)
+    .split('.')
+    .filter(Boolean)
+    .reduce((current, key) => {
+      if (current == null) return undefined;
+      const numeric = /^\d+$/.test(key) ? Number(key) : key;
+      return current[numeric];
+    }, value);
+}
+
+function applyTemplate(value, context) {
+  if (Array.isArray(value)) return value.map((item) => applyTemplate(item, context));
+  if (value && typeof value === 'object') {
+    const out = {};
+    for (const [key, item] of Object.entries(value)) out[key] = applyTemplate(item, context);
+    return out;
+  }
+  if (typeof value !== 'string') return value;
+
+  if (value === '{{model}}') return context.model;
+  if (value === '{{messages}}') return context.messages;
+  if (value === '{{prompt}}') return context.prompt;
+
+  return value
+    .replaceAll('{{model}}', String(context.model || ''))
+    .replaceAll('{{prompt}}', String(context.prompt || ''));
+}
+
 function extractProviderText(data) {
   if (data == null) return '';
   if (typeof data === 'string') return data;
@@ -581,6 +613,9 @@ async function runProviderChat(payload = {}) {
           .map((m) => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: String(m.content || '') }))
       };
       if (system) body.system = system;
+    } else if (provider.type === 'custom' && Object.keys(provider.bodyTemplate || {}).length) {
+      const prompt = messages.filter((m) => m.role === 'user').slice(-1)[0]?.content || '';
+      body = applyTemplate(provider.bodyTemplate, { model, messages, prompt });
     } else {
       body = { model, messages };
     }
@@ -597,7 +632,12 @@ async function runProviderChat(payload = {}) {
       120000
     );
 
-    const text = extractProviderText(data).trim();
+    const configuredResponse = provider.responsePath ? valueAtPath(data, provider.responsePath) : undefined;
+    const text = (
+      configuredResponse !== undefined
+        ? extractProviderText(configuredResponse)
+        : extractProviderText(data)
+    ).trim();
     send('terminal:data', {
       raw: '[provider] ' + provider.name + ' request completed.\r\n',
       agent: 'provider',
@@ -1050,10 +1090,7 @@ app.whenReady().then(() => {
     )
   );
 
-  ipcMain.handle('chat:provider-send', (_event, payload) => {
-    runProviderChat(payload);
-    return { ok: true };
-  });
+  ipcMain.handle('chat:provider-send', (_event, payload) => runProviderChat(payload));
 
   ipcMain.handle('chat:stop', () => {
     if (chatProcess) {
