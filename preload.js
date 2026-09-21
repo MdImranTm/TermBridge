@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld('termbridge', {
   configureTool: (agent) => ipcRenderer.invoke('tools:configure', agent),
   pickFolder: () => ipcRenderer.invoke('folder:pick'),
   refreshProject: () => ipcRenderer.invoke('project:refresh'),
+  openProjectPath: (folder) => ipcRenderer.invoke('project:open-path', folder),
   startAgent: (agent, options = {}) => ipcRenderer.invoke('agent:start', { agent, options }),
   send: (text) => ipcRenderer.invoke('terminal:write', text),
   sendChat: (agent, prompt, options = {}) => ipcRenderer.invoke('chat:send', { agent, prompt, options }),
