@@ -2248,37 +2248,50 @@ api.onChatSession(({ agent, sessionId }) => {
 api.onEngineSync(({ agent, sessionId, model, subagent }) => {
   if (!agent) return;
 
-  syncSessionEngineState(agent, sessionId, model, subagent);
-
-  if (agent !== state.agent) return;
-
+  const isActive = agent === state.agent;
   let changed = false;
 
-  if (model && options.model !== model) {
+  if (isActive && model) {
+    const visibleModel = els.modelSelect.value === '__custom__'
+      ? els.customModelInput.value.trim()
+      : els.modelSelect.value;
+
     options.model = model;
-    const exists = [...els.modelSelect.options].some((option) => option.value === model);
-    if (exists) {
-      els.modelSelect.value = model;
-      els.customModelInput.classList.add('hidden');
-    } else {
-      els.modelSelect.value = '__custom__';
-      els.customModelInput.value = model;
-      els.customModelInput.classList.remove('hidden');
+
+    if (visibleModel !== model) {
+      const exists = [...els.modelSelect.options].some((option) => option.value === model);
+      if (exists) {
+        els.modelSelect.value = model;
+        els.customModelInput.classList.add('hidden');
+      } else {
+        els.modelSelect.value = '__custom__';
+        els.customModelInput.value = model;
+        els.customModelInput.classList.remove('hidden');
+      }
+      changed = true;
     }
-    changed = true;
   }
 
-  if (subagent && options.subagent !== subagent) {
+  if (isActive && subagent) {
     options.subagent = subagent;
-    const exists = [...els.agentSelect.options].some((option) => option.value === subagent);
-    if (exists) els.agentSelect.value = subagent;
-    changed = true;
+
+    if (els.agentSelect.value !== subagent) {
+      let exists = [...els.agentSelect.options].some((option) => option.value === subagent);
+      if (!exists) {
+        const option = document.createElement('option');
+        option.value = subagent;
+        option.textContent = subagent;
+        els.agentSelect.appendChild(option);
+        exists = true;
+      }
+      if (exists) els.agentSelect.value = subagent;
+      changed = true;
+    }
   }
 
-  if (changed) {
-    const session = activeSession();
-    if (session) session.options = { ...options };
-    saveSessions();
+  syncSessionEngineState(agent, sessionId, model, subagent);
+
+  if (isActive && changed) {
     renderChatHeader();
     addActivity('Terminal state synced', [
       model || '',
