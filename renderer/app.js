@@ -128,7 +128,8 @@ function newSession() {
     id: uid(),
     title: 'New chat',
     agent: state.agent || 'powershell',
-    cwd: state.project?.path || state.cwd || '',
+    cwd: state.project?.path || '',
+    hasProject: Boolean(state.project?.path),
     createdAt: Date.now(),
     messages: [],
     options: { ...options }
@@ -145,7 +146,7 @@ async function selectSession(id) {
   const session = activeSession();
   if (!session) return;
 
-  if (session.cwd && session.cwd !== state.project?.path) {
+  if (session.hasProject === true && session.cwd && session.cwd !== state.project?.path) {
     const project = await api.openProjectPath(session.cwd);
     if (project) renderProject(project);
   }
@@ -633,6 +634,7 @@ function renderProject(project) {
   const session = activeSession();
   if (session) {
     session.cwd = project.path;
+    session.hasProject = true;
     saveSessions();
   }
 }
@@ -1070,7 +1072,7 @@ api.onChatComplete(({ ok, text, error, code }) => {
   if (session?.agent) state.agent = session.agent;
   if (session?.options) options = { ...options, ...session.options };
 
-  if (session?.cwd && session.cwd !== state.project?.path) {
+  if (session?.hasProject === true && session?.cwd && session.cwd !== state.project?.path) {
     const restored = await api.openProjectPath(session.cwd);
     if (restored) state.project = restored;
   }
