@@ -30,13 +30,21 @@ const TOOL_SLASH_COMMANDS = {
   ],
   opencode: [
     { name: '/help', description: 'Open OpenCode help', source: 'OpenCode' },
+    { name: '/connect', description: 'Connect or configure an AI provider', source: 'OpenCode' },
     { name: '/new', description: 'Start a new OpenCode session', source: 'OpenCode' },
     { name: '/sessions', description: 'List and switch sessions', source: 'OpenCode' },
     { name: '/models', description: 'Choose an available model', source: 'OpenCode' },
     { name: '/agents', description: 'Choose an available agent', source: 'OpenCode' },
+    { name: '/compact', description: 'Compact the current session context', source: 'OpenCode' },
+    { name: '/details', description: 'Toggle tool execution details', source: 'OpenCode' },
+    { name: '/thinking', description: 'Toggle thinking block visibility', source: 'OpenCode' },
+    { name: '/themes', description: 'Open the OpenCode theme selector', source: 'OpenCode' },
+    { name: '/init', description: 'Create or update project AGENTS.md guidance', source: 'OpenCode' },
     { name: '/undo', description: 'Undo the latest work', source: 'OpenCode' },
     { name: '/redo', description: 'Restore reverted work', source: 'OpenCode' },
     { name: '/editor', description: 'Open the external prompt editor', source: 'OpenCode' },
+    { name: '/export', description: 'Export the current OpenCode conversation', source: 'OpenCode' },
+    { name: '/share', description: 'Share the current OpenCode session', source: 'OpenCode' },
     { name: '/btw', description: 'Ask a side question without changing context', source: 'OpenCode' }
   ]
 };
