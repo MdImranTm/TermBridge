@@ -104,6 +104,8 @@ const els = {
   providerChatPath: $('#providerChatPath'),
   providerDefaultModel: $('#providerDefaultModel'),
   providerHeaders: $('#providerHeaders'),
+  providerBodyTemplate: $('#providerBodyTemplate'),
+  providerResponsePath: $('#providerResponsePath'),
   testProviderBtn: $('#testProviderBtn'),
   useProviderBtn: $('#useProviderBtn'),
   deleteProviderBtn: $('#deleteProviderBtn'),
@@ -1422,7 +1424,10 @@ function showProviderEditor(provider) {
   els.providerChatPath.value = provider.chatPath || '/chat/completions';
   els.providerDefaultModel.value = provider.defaultModel || '';
   els.providerHeaders.value = JSON.stringify(provider.headers || {}, null, 2);
+  els.providerBodyTemplate.value = JSON.stringify(provider.bodyTemplate || { model: '{{model}}', messages: '{{messages}}' }, null, 2);
+  els.providerResponsePath.value = provider.responsePath || '';
   updateSecretFields();
+  updateProviderTypeFields();
   renderProviders();
 }
 
@@ -1453,14 +1458,22 @@ function newProviderDraft() {
   els.providerChatPath.value = draft.chatPath;
   els.providerDefaultModel.value = '';
   els.providerHeaders.value = '{}';
+  els.providerBodyTemplate.value = JSON.stringify({ model: '{{model}}', messages: '{{messages}}' }, null, 2);
+  els.providerResponsePath.value = '';
   resetProviderResult();
   updateSecretFields();
+  updateProviderTypeFields();
 }
 
 function updateSecretFields() {
   const source = els.providerSecretSource.value;
   els.apiKeyField.classList.toggle('hidden', source !== 'vault');
   els.providerSecretRef.disabled = source !== 'env';
+}
+
+function updateProviderTypeFields() {
+  const custom = els.providerType.value === 'custom';
+  $('.custom-only').forEach((element) => element.classList.toggle('hidden', !custom));
 }
 
 function providerFormValue() {
@@ -1474,6 +1487,18 @@ function providerFormValue() {
     throw new Error('Extra headers JSON is invalid: ' + error.message);
   }
 
+  let bodyTemplate = {};
+  if (els.providerType.value === 'custom') {
+    try {
+      bodyTemplate = JSON.parse(els.providerBodyTemplate.value || '{}');
+      if (!bodyTemplate || Array.isArray(bodyTemplate) || typeof bodyTemplate !== 'object') {
+        throw new Error('Body template must be a JSON object.');
+      }
+    } catch (error) {
+      throw new Error('Custom REST body template is invalid: ' + error.message);
+    }
+  }
+
   return {
     id: els.providerId.value || undefined,
     name: els.providerName.value.trim(),
@@ -1485,7 +1510,9 @@ function providerFormValue() {
     modelsPath: els.providerModelsPath.value.trim() || '/models',
     chatPath: els.providerChatPath.value.trim() || '/chat/completions',
     defaultModel: els.providerDefaultModel.value.trim(),
-    headers
+    headers,
+    bodyTemplate,
+    responsePath: els.providerResponsePath.value.trim()
   };
 }
 
@@ -1682,6 +1709,7 @@ els.newProviderBtn.addEventListener('click', newProviderDraft);
 els.providerForm.addEventListener('submit', saveProviderFromForm);
 els.providerSecretSource.addEventListener('change', updateSecretFields);
 els.providerType.addEventListener('change', () => {
+  updateProviderTypeFields();
   if (els.providerType.value === 'anthropic' && els.providerChatPath.value === '/chat/completions') {
     els.providerChatPath.value = '/messages';
   }
