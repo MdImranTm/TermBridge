@@ -1,6 +1,6 @@
 {
   "name": "termbridge",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Professional desktop workspace for Codex, Claude Code, OpenCode and local terminals.",
   "main": "main.js",
   "author": "MdImranTm",
@@ -11,7 +11,8 @@
     "dist:win": "electron-builder --win nsis portable --x64 --publish never"
   },
   "dependencies": {
-    "node-pty": "^1.1.0"
+    "node-pty": "^1.1.0",
+    "cross-spawn": "^7.0.6"
   },
   "devDependencies": {
     "electron": "44.4.3",
