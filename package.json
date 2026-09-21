@@ -1,0 +1,58 @@
+{
+  "name": "termbridge",
+  "version": "0.2.0",
+  "description": "A professional desktop chat bridge for terminal-based AI tools and shells.",
+  "main": "main.js",
+  "author": "MdImranTm",
+  "license": "MIT",
+  "scripts": {
+    "dev": "electron .",
+    "postinstall": "electron-builder install-app-deps",
+    "dist:win": "electron-builder --win nsis portable --x64"
+  },
+  "dependencies": {
+    "node-pty": "^1.1.0"
+  },
+  "devDependencies": {
+    "electron": "44.4.3",
+    "electron-builder": "26.15.3"
+  },
+  "build": {
+    "appId": "com.termbridge.desktop",
+    "productName": "TermBridge",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer/**/*",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "node_modules/node-pty/**/*"
+    ],
+    "win": {
+      "target": [
+        { "target": "nsis", "arch": ["x64"] },
+        { "target": "portable", "arch": ["x64"] }
+      ]
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "allowElevation": true,
+      "createDesktopShortcut": "always",
+      "createStartMenuShortcut": true,
+      "shortcutName": "TermBridge",
+      "runAfterFinish": true,
+      "artifactName": "TermBridge-${version}-Setup.${ext}"
+    },
+    "portable": {
+      "artifactName": "TermBridge-${version}-Portable.${ext}"
+    }
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
